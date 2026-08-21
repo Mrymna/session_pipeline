@@ -109,7 +109,40 @@ def _read_view_scale(d, log_mouse, overrides, wsig=''):
     return None, 'NOT FOUND'
 
 
-def discover(root, view_scales=None, pattern='*', task=None):
+def _progress(seq, desc, enabled=True, labels=None):
+    """Wrap an iterable in a progress bar.
+
+    Reading a directory of logs is the slow step of discovery -- each `log.json` carries the full
+    coords/joystick streams, so a 40-session animal takes long enough that a silent cell looks
+    hung. The bar names the session currently being read, which also makes it obvious WHICH log is
+    slow (or which one the traceback came from) if one of them is malformed.
+
+    tqdm is imported lazily and falls back to a plain carriage-return counter, so this module still
+    imports on a machine without it, and a non-notebook caller still gets feedback.
+
+    `labels` names each item. It is passed explicitly rather than read off the item, because the
+    two callers hold different things: discovery iterates Paths (where `.name` is the folder) but
+    scoring iterates pandas Series (where `.name` is the ROW INDEX, so the bar would count 0,1,2).
+    """
+    seq = list(seq)
+    labels = list(labels) if labels is not None else [getattr(x, 'name', '') for x in seq]
+    if not enabled or len(seq) < 2:
+        return seq
+    try:
+        from tqdm.auto import tqdm
+        return tqdm(seq, desc=desc, unit='session')
+    except Exception:
+        def gen():
+            n = len(seq)
+            for i, (x, lb) in enumerate(zip(seq, labels), 1):
+                print(f'\r{desc}: {i}/{n} ({100 * i // n}%)  {str(lb or "")[:40]:40s}',
+                      end='', flush=True)
+                yield x
+            print()
+        return gen()
+
+
+def discover(root, view_scales=None, pattern='*', task=None, progress=True):
     """Scan `root` for session folders and describe each one.
 
     root        folder holding one sub-folder per session (a folder containing log.json
@@ -119,6 +152,8 @@ def discover(root, view_scales=None, pattern='*', task=None):
     task        keep only this task variant ('banish_multiplier' / 'timeout_double'). Sessions of
                 another task are still LISTED, with use=False and a note -- so a stray session of
                 the wrong protocol is visible rather than silently absent.
+    progress    show a progress bar while the logs are read (they are large; a silent cell over a
+                40-session animal looks hung). Set False for scripted/batch use.
 
     Returns a DataFrame sorted by session datetime, one row per session.
     """
@@ -127,7 +162,11 @@ def discover(root, view_scales=None, pattern='*', task=None):
            sorted(p for p in root.glob(pattern) if (p / 'log.json').exists())
 
     rows = []
-    for d in dirs:
+    bar = _progress(dirs, f'reading {len(dirs)} log(s)', enabled=progress,
+                    labels=[d.name for d in dirs])
+    for d in bar:
+        if hasattr(bar, 'set_postfix_str'):
+            bar.set_postfix_str(d.name[:38])
         rec = dict(dir=str(d), name=d.name, log=str(d / 'log.json'),
                    mouse=None, mouse_raw=None, mouse_src='', datetime=pd.NaT, task='unreadable',
                    view_scale=None, vs_src='', n_collected=0, world='', effects='',
@@ -434,15 +473,23 @@ def require_single_animal(S):
     return animals[0] if animals else None
 
 
-def score(S, verbose=True):
+def score(S, verbose=True, progress=True):
     """Score every `use=True` row with perf_from_log. Returns a DataFrame, one row per session.
 
     Sessions of different TASKS are scored side by side (D is defined the same way for both), but
     the `task` column is carried through so downstream plots can keep them visually separate --
     a protocol switch is a break in the curve, not a step along it.
+
+    `progress` shows a bar: this re-reads every log AND does the visibility geometry, so it is the
+    slowest cell in the notebook -- slower than discovery, which only parses.
     """
     out = []
-    for _, r in S.iterrows():
+    todo = [r for _, r in S.iterrows()]
+    bar = _progress(todo, f'scoring {int(S.use.sum())} of {len(todo)} session(s)',
+                    enabled=progress, labels=[str(r['name']) for r in todo])
+    for r in bar:
+        if hasattr(bar, 'set_postfix_str'):
+            bar.set_postfix_str(str(r['name'])[:38])
         if not r.use:
             if verbose:
                 print(f'  -- skipped {r["name"]}: {r.note}')
