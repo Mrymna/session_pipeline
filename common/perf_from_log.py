@@ -1,0 +1,277 @@
+"""
+LOG-ONLY performance + discrimination score, for tracking ONE ANIMAL ACROSS DAYS.
+
+Why this exists: the full per-session pipeline decodes video (optic flow ~30 min, pupil ~4 min), but
+**the performance measures need none of it**. Everything below comes from `log.json` alone --
+`collected` (what he took), `spawns[].current` (what was on the board), `coords_t[ms]/x/y` (where he
+was) and `worlds` (world size). So a whole week of sessions can be scored in seconds, which is what
+makes a day-by-day learning curve practical.
+
+WHAT IS COMPUTED (identical definitions to the per-session scorecards, so the numbers are directly
+comparable to `analyze_performance.py`):
+  - counts of each outcome, reward DROPS (banish task: sum of the streak multiplier; timeout task:
+    1 x single + 2 x double -- both verified against the rigs' own delivery counters)
+  - P(collect positive | collected)
+  - the VISIBILITY-WEIGHTED chance baseline: how often each icon TYPE was inside the viewport,
+    since the animal can only choose among what is on his screen
+  - DISCRIMINATION SCORE  D = (observed - chance) / (1 - chance), with a binomial p and a
+    Wilson 95% CI mapped through D -- reported for TWO memory assumptions: ZERO memory (an icon
+    counts only while on screen) and PERFECT memory (it counts once he has seen it this trial).
+    Real memory lies between, so D is a RANGE; the two are the ends of an assumption, not a right
+    and a wrong baseline.
+  - an EXOGENOUS cross-check baseline (nearest icon at spawn), which his behaviour cannot move
+  - *** THE LEARNING CRITERION *** `conflict_p` = P(positive | BOTH types on screen AND the negative
+    one was NEARER). These are the trials where proximity and value disagree, so he must override the
+    pull of the closer icon. This is the number to track across days: it must RISE if he is learning
+    to avoid the hazard, while `agree_p` (the control) stays high. ~15 such trials per session, so
+    pool ~3 sessions per block -- one session alone gives a +-0.25 interval.
+  - throughput (collections/min, drops/min) and, for the timeout task, ACTIVE minutes with the
+    ~14 s post-timeout coord blackout removed
+
+AGREEMENT WITH THE PER-SESSION PIPELINE: `chance` lands within ~0.015 of `analyze_performance.py`
+(0168 0.729 vs 0.713; 0231 0.717 vs 0.709), which never changes a conclusion here. The residual is
+methodological, not a bug: the per-session version restricts to `analyze==True` (and, for the banish
+task, NORMAL-world) trials and samples the avatar on the uniform video-frame clock, while this one
+scores every collectable trial straight from the coord stream. For a CROSS-DAY curve what matters is
+that the same definition is applied to every day -- do not mix the two sources within one figure.
+
+⚠️ `view_scale` IS NOT IN THE LOG and differs per session (it is a property of the WORLD). It must be
+supplied per session -- `VIEW_SCALE_BY_MOUSE` below is only a convenience for the sessions already
+established; anything else must be passed explicitly or the visibility baseline is silently wrong.
+"""
+from pathlib import Path
+import json
+import numpy as np
+
+SKETCH_W, SKETCH_H = 800, 600
+
+TASK_SIGNATURES = {
+    'timeout_double':    {'timeout', 'double_reward'},
+    'banish_multiplier': {'banish', 'unbanish'},
+}
+POSITIVE = {'timeout_double': {'single_reward', 'double_reward'},
+            'banish_multiplier': {'single_reward'}}
+NEGATIVE = {'timeout_double': {'timeout'}, 'banish_multiplier': {'banish'}}
+# drops delivered per collection; the banish task instead uses the per-collection `multiplier`
+DROPS = {'timeout_double': {'single_reward': 1, 'double_reward': 2}}
+
+# known per-session view scales (see common/viewport.py). NOT a default for new animals.
+VIEW_SCALE_BY_MOUSE = {'JPAS_0231': 0.56, 'JPAS_0168': 0.35}
+
+FREEZE_GAP_MIN_S = 2.0     # a coord gap this long starting at a timeout = the penalty blackout
+
+
+def classify_task(effects):
+    for name, sig in TASK_SIGNATURES.items():
+        if sig & set(effects):
+            return name
+    return 'unknown'
+
+
+def _wilson(k, n, z=1.96):
+    if n == 0:
+        return np.nan, np.nan
+    p = k / n
+    den = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / den
+    h = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return c - h, c + h
+
+
+def _spawn_batches(log):
+    batches = {}
+    for s in sorted(log['spawns'], key=lambda s: s['time']):
+        t = s['time']
+        cur = s.get('current', []) or []
+        if t not in batches or len(cur) > len(batches[t]):
+            batches[t] = cur
+    return sorted(batches.items())
+
+
+def score_log(log_path, view_scale=None, mouse_id=None, label=None):
+    """Score one session from its log.json. Returns a flat dict, one row per session."""
+    log_path = Path(log_path)
+    log = json.load(open(log_path))
+    mouse_id = mouse_id or log_path.parent.name
+    collected = sorted(log['collected'], key=lambda c: c['time'])
+    task = classify_task({c.get('effect') for c in collected})
+    if task == 'unknown':
+        raise ValueError(f'{log_path}: cannot classify task from effects '
+                         f'{sorted({c.get("effect") for c in collected})}')
+    pos_set, neg_set = POSITIVE[task], NEGATIVE[task]
+
+    if view_scale is None:
+        view_scale = VIEW_SCALE_BY_MOUSE.get(mouse_id)
+    if not view_scale:
+        raise ValueError(
+            f"{log_path}: no view_scale for {mouse_id!r}. It is a property of the WORLD, is not in "
+            f"the log, and differs per session -- pass view_scale=... explicitly. Known: "
+            f"{VIEW_SCALE_BY_MOUSE}")
+    vw, vh = SKETCH_W / view_scale, SKETCH_H / view_scale
+
+    w0 = log['worlds'][0] if isinstance(log['worlds'], list) else log['worlds']
+    C = np.array(log['coords_t[ms]/x/y'], float)
+
+    # --- timeout penalty blackouts (timeout task only) -----------------------------------
+    freezes = []
+    if task == 'timeout_double':
+        t = C[:, 0]
+        tos = np.array([c['time'] for c in collected if c['effect'] == 'timeout'], float)
+        for i in np.where(np.diff(t) > FREEZE_GAP_MIN_S * 1000)[0]:
+            if len(tos) and np.abs(tos - t[i]).min() < 1500:
+                freezes.append((t[i], t[i + 1]))
+
+    # --- trials = spawn batches ------------------------------------------------------------
+    batches = _spawn_batches(log)
+    bt = [b[0] for b in batches]
+    end_ms = float(C[-1, 0])
+    coll_t = np.array([c['time'] for c in collected], float)
+
+    rows = []
+    for i, (t0, icons) in enumerate(batches):
+        t1 = bt[i + 1] if i + 1 < len(batches) else end_ms
+        outcome, mult = None, np.nan
+        j = np.searchsorted(coll_t, t1 - 1)
+        if j < len(coll_t) and abs(coll_t[j] - t1) <= 50:
+            outcome = collected[j].get('effect')
+            mult = collected[j].get('multiplier', np.nan)
+        if outcome not in pos_set | neg_set:
+            continue                                  # reshuffle / incomplete / escape-only
+        fz = sum(max(0.0, min(e, t1) - max(s, t0)) for s, e in freezes)
+        rows.append(dict(t0=t0, t1=t1, outcome=outcome, mult=mult, icons=icons, freeze_ms=fz))
+
+    if not rows:
+        raise ValueError(f'{log_path}: no scorable trials')
+
+    pos = sum(r['outcome'] in pos_set for r in rows)
+    neg = sum(r['outcome'] in neg_set for r in rows)
+    if task == 'banish_multiplier':
+        drops = int(np.nansum([r['mult'] for r in rows if r['outcome'] in pos_set]))
+    else:
+        drops = int(sum(DROPS[task].get(r['outcome'], 0) for r in rows))
+
+    wall_min = (rows[-1]['t1'] - rows[0]['t0']) / 60000
+    freeze_min = sum(r['freeze_ms'] for r in rows) / 60000
+    active_min = wall_min - freeze_min
+
+    # --- visibility-weighted chance ---------------------------------------------------------
+    vpos = vneg = 0.0      # ZERO-memory: time-weighted fraction on screen
+    mpos = mneg = 0.0      # PERFECT-memory: ever on screen this trial
+    n_use = 0
+    for r in rows:
+        m = (C[:, 0] >= r['t0']) & (C[:, 0] <= r['t1'])
+        if m.sum() < 5:
+            continue
+        tt, ax, ay = C[m, 0], C[m, 1], C[m, 2]
+        # TIME-weight each sample. `coords` is logged only while the avatar MOVES, so a plain mean
+        # over samples over-weights moving periods and biases the visibility estimate. Weighting by
+        # the time each sample represents makes this match the per-session pipeline, which samples
+        # on the uniform 30 Hz video-frame clock.
+        wgt = np.diff(np.concatenate([tt, [r['t1']]]))
+        wgt = np.clip(wgt, 0, None)
+        if wgt.sum() <= 0:
+            continue
+        got = False
+        for ic in r['icons']:
+            if ic.get('effect') not in pos_set | neg_set:
+                continue
+            vis = (np.abs(ic['x'] - ax) <= vw / 2) & (np.abs(ic['y'] - ay) <= vh / 2)
+            v = float(np.average(vis, weights=wgt))
+            if ic['effect'] in pos_set:
+                vpos += v; mpos += float(vis.any())
+            else:
+                vneg += v; mneg += float(vis.any())
+            got = True
+        n_use += got
+    vpos, vneg = (vpos / n_use, vneg / n_use) if n_use else (np.nan, np.nan)
+    mpos, mneg = (mpos / n_use, mneg / n_use) if n_use else (np.nan, np.nan)
+    chance = vpos / (vpos + vneg) if np.isfinite(vpos + vneg) and (vpos + vneg) > 0 else np.nan
+    # PERFECT-memory bound: he also knows icons he has already seen this trial (see the module
+    # docstring). The two are the ends of a memory assumption, not a right and a wrong baseline.
+    chance_mem = mpos / (mpos + mneg) if np.isfinite(mpos + mneg) and (mpos + mneg) > 0 else np.nan
+
+    # --- *** THE LEARNING CRITERION *** ------------------------------------------------------
+    # On the trials where BOTH types were on screen together, split by which was NEARER at that
+    # first joint moment. The CONFLICT trials (negative icon closer) are where he has to override
+    # proximity, so P(positive | conflict) is the number that must RISE if he learns to avoid the
+    # hazard. The agree-trials are the CONTROL: if BOTH columns move he has just stopped following
+    # proximity, which is not the same as recognising the icon.
+    n_conf = k_conf = n_agree = k_agree = 0
+    for r in rows:
+        m = (C[:, 0] >= r['t0']) & (C[:, 0] <= r['t1'])
+        if m.sum() < 5:
+            continue
+        ax, ay = C[m, 1], C[m, 2]
+        P_ = [ic for ic in r['icons'] if ic.get('effect') in pos_set]
+        N_ = [ic for ic in r['icons'] if ic.get('effect') in neg_set]
+        if not P_ or not N_:
+            continue
+        vP = np.zeros(m.sum(), bool); vN = np.zeros(m.sum(), bool)
+        for ic in P_:
+            vP |= (np.abs(ic['x'] - ax) <= vw / 2) & (np.abs(ic['y'] - ay) <= vh / 2)
+        for ic in N_:
+            vN |= (np.abs(ic['x'] - ax) <= vw / 2) & (np.abs(ic['y'] - ay) <= vh / 2)
+        both = vP & vN
+        if not both.any():
+            continue
+        i = int(np.argmax(both))
+        dP = min(np.hypot(ic['x'] - ax[i], ic['y'] - ay[i]) for ic in P_)
+        dN = min(np.hypot(ic['x'] - ax[i], ic['y'] - ay[i]) for ic in N_)
+        got = r['outcome'] in pos_set
+        if dN < dP:
+            n_conf += 1; k_conf += got
+        else:
+            n_agree += 1; k_agree += got
+    conflict_p = k_conf / n_conf if n_conf else np.nan
+    conflict_lo, conflict_hi = _wilson(k_conf, n_conf)
+    agree_p = k_agree / n_agree if n_agree else np.nan
+
+    # --- exogenous cross-check: is the NEAREST icon at spawn positive? -----------------------
+    near_pos = near_tot = 0
+    for r in rows:
+        ic = [i for i in r['icons'] if i.get('effect') in pos_set | neg_set]
+        if not ic:
+            continue
+        ax = float(np.interp(r['t0'], C[:, 0], C[:, 1]))
+        ay = float(np.interp(r['t0'], C[:, 0], C[:, 2]))
+        nearest = min(ic, key=lambda i: np.hypot(i['x'] - ax, i['y'] - ay))
+        near_pos += nearest['effect'] in pos_set
+        near_tot += 1
+    chance_exo = near_pos / near_tot if near_tot else np.nan
+
+    from scipy.stats import binomtest
+    acc = pos / (pos + neg) if (pos + neg) else np.nan
+    toD = lambda p0, v=None: ((acc if v is None else v) - p0) / (1 - p0)
+    lo, hi = _wilson(pos, pos + neg)
+    return dict(
+        mouse=mouse_id, label=label or mouse_id, task=task, log=str(log_path),
+        view_scale=view_scale, n_trials=len(rows),
+        pos=pos, neg=neg, drops=drops, acc=acc,
+        vis_pos=vpos, vis_neg=vneg, chance=chance,
+        mem_pos=mpos, mem_neg=mneg, chance_mem=chance_mem,
+        D_mem=toD(chance_mem), p_mem=binomtest(pos, pos + neg, chance_mem).pvalue
+        if np.isfinite(chance_mem) else np.nan,
+        D=toD(chance), D_lo=toD(chance, lo), D_hi=toD(chance, hi),
+        p=binomtest(pos, pos + neg, chance).pvalue if np.isfinite(chance) else np.nan,
+        n_both=n_conf + n_agree,
+        n_conflict=n_conf, k_conflict=k_conf, conflict_p=conflict_p,
+        conflict_lo=conflict_lo, conflict_hi=conflict_hi,
+        n_agree=n_agree, agree_p=agree_p,
+        chance_exo=chance_exo, D_exo=toD(chance_exo),
+        p_exo=binomtest(pos, pos + neg, chance_exo).pvalue if np.isfinite(chance_exo) else np.nan,
+        wall_min=wall_min, active_min=active_min, freeze_min=freeze_min,
+        coll_per_min=pos / wall_min, drops_per_min=drops / wall_min,
+        coll_per_active_min=pos / max(active_min, 1e-9),
+        world_w=w0.get('width'), world_h=w0.get('height'))
+
+
+def score_many(entries):
+    """entries: list of (log_path, view_scale, label) or dicts -> list of score rows."""
+    out = []
+    for e in entries:
+        if isinstance(e, dict):
+            out.append(score_log(**e))
+        else:
+            lp, vs, lab = (list(e) + [None, None])[:3]
+            out.append(score_log(lp, view_scale=vs, label=lab))
+    return out
