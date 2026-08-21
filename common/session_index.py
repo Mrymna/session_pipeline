@@ -41,14 +41,24 @@ import perf_from_log as pfl
 def normalise_mouse(raw):
     """'mice 168' / 'JPASS_0231' / 'JPAS_0168' -> a canonical 'JPAS_0168'.
 
-    The rig writes the ID free-form, so the only stable part is the digits. Anything without
-    digits is returned stripped, so it at least groups with itself.
+    The rig writes the ID free-form, so the only stable part is the DIGITS.
+
+    *** No digits => None (no identity evidence), NOT the stripped string. ***
+    An earlier version returned the stripped text so that an id-less session "at least groups with
+    itself". On the real server that backfired: 28 sessions carry `experiment_data.ID` == '_', so
+    they all normalised to the single animal '_' and `require_single_animal` reported the folder as
+    spanning two mice. That is worse than useless -- '_' is not an animal, it is a rig field nobody
+    filled in, and treating it as one both invented an animal and masked the real one.
+
+    Returning None instead lets the caller fall back to other evidence (the FOLDER NAME does carry
+    the animal: `JPAS_168_2026-07-22_10;46;59`). See `discover`, which records WHICH source the id
+    came from in `mouse_src` so the fallback is visible rather than silent.
     """
     if raw is None:
         return None
     digits = re.findall(r'\d+', str(raw))
     if not digits:
-        return str(raw).strip() or None
+        return None
     # FIRST group, not last: names are commonly suffixed with a date
     # ('JPASS_0168_2026-08-07'), and the last group would then be the day.
     return f'JPAS_{int(digits[0]):04d}'
@@ -119,7 +129,7 @@ def discover(root, view_scales=None, pattern='*', task=None):
     rows = []
     for d in dirs:
         rec = dict(dir=str(d), name=d.name, log=str(d / 'log.json'),
-                   mouse=None, mouse_raw=None, datetime=pd.NaT, task='unreadable',
+                   mouse=None, mouse_raw=None, mouse_src='', datetime=pd.NaT, task='unreadable',
                    view_scale=None, vs_src='', n_collected=0, world='', effects='',
                    has_banish=False, has_multiplier=False, max_multiplier=0,
                    use=False, note='', warn='')
@@ -131,7 +141,13 @@ def discover(root, view_scales=None, pattern='*', task=None):
 
         ed = L.get('experiment_data', {}) or {}
         rec['mouse_raw'] = ed.get('ID')
-        rec['mouse'] = normalise_mouse(ed.get('ID')) or normalise_mouse(d.name)
+        # the animal comes from the log's ID when that field carries digits, otherwise from the
+        # FOLDER NAME (which does: JPAS_168_2026-07-22_10;46;59). Which source was used is recorded,
+        # because a folder name is weaker evidence than the log -- a mis-filed folder would rename
+        # the animal silently, and `mouse_src == 'folder'` is what makes that checkable.
+        m_log, m_dir = normalise_mouse(ed.get('ID')), normalise_mouse(d.name)
+        rec['mouse'] = m_log or m_dir
+        rec['mouse_src'] = 'log' if m_log else ('folder' if m_dir else '')
         try:
             rec['datetime'] = pd.to_datetime(ed.get('datetime'))
         except Exception:
@@ -179,6 +195,13 @@ def discover(root, view_scales=None, pattern='*', task=None):
         warns = []
         if not re.fullmatch(r'.+_\d{4}-\d{2}-\d{2}_\d{2};\d{2};\d{2}', d.name):
             warns.append('unusual folder-name suffix -- check what it marks')
+        # both sources named an animal and they disagree -- one of them is wrong, and which one
+        # matters more than the mismatch: it decides whose learning curve this session joins.
+        if m_log and m_dir and m_log != m_dir:
+            warns.append(f'animal MISMATCH: log says {m_log}, folder says {m_dir} (using {m_log})')
+        if not m_log:
+            warns.append(f'log ID {ed.get("ID")!r} carries no animal number -- '
+                         f'took {rec["mouse"]} from the folder name')
         rec['warn'] = '; '.join(warns)
         rec['note'] = '; '.join(notes)
         rec['use'] = not notes
@@ -341,6 +364,54 @@ def world_report(S):
             print(f'  {wsig}\n      {len(g)} session(s)  ->  view_scale {vs[0]}  (from {srcs})')
 
 
+def one_per_day(S, keep='last', verbose=True):
+    """Collapse days that hold more than one session down to a single session per day.
+
+    The real server directory does record two sessions on one date (seen on 2026-07-22), and for a
+    LEARNING CURVE that is a problem: the x-axis is meant to be "training day", so a day with two
+    recordings contributes two points and is weighted twice against every other day. Maryam's rule
+    for this animal is to KEEP THE LAST session of such a day (the later one is the one that ran to
+    completion; an early short recording is usually a restart).
+
+    keep='last' (default) or 'first'.
+
+    The de-selected sessions are NOT deleted -- they stay in the table with `use=False` and a note
+    naming the session that superseded them, the same convention the duplicate and no-view_scale
+    checks use. Nothing about the set should be invisible; the row is still there to be overridden
+    by setting `use=True` by hand.
+
+    Only sessions that are still usable compete: if the last recording of a day is unusable (no
+    view_scale, camera moved, wrong protocol), the rule falls through to the latest one that IS
+    usable rather than throwing the whole day away.
+    """
+    if not len(S) or 'day' not in S:
+        return S
+    S = S.copy()
+    dropped = []
+    for day, g in S[S.use & S.day.notna()].groupby('day'):
+        if len(g) < 2:
+            continue
+        g = g.sort_values('datetime', na_position='first')
+        winner = g.index[-1] if keep == 'last' else g.index[0]
+        for i in g.index:
+            if i == winner:
+                continue
+            note = (f"{'later' if keep == 'last' else 'earlier'} session "
+                    f"{S.at[winner, 'name']} kept for {day} (one session per day)")
+            S.at[i, 'note'] = '; '.join(x for x in [S.at[i, 'note'], note] if x)
+            S.at[i, 'use'] = False
+            dropped.append((day, S.at[i, 'name'], S.at[i, 'time'], S.at[winner, 'name']))
+    if verbose:
+        if dropped:
+            print(f'ONE SESSION PER DAY (keep={keep}): de-selected {len(dropped)} session(s); '
+                  f'{int(S.use.sum())} remain usable')
+            for day, name, t, win in dropped:
+                print(f'    {day}  dropped {name} ({t})  ->  kept {win}')
+        else:
+            print(f'ONE SESSION PER DAY (keep={keep}): no day held more than one usable session')
+    return S
+
+
 def require_single_animal(S):
     """Raise if the discovered set spans more than one animal.
 
@@ -350,10 +421,16 @@ def require_single_animal(S):
     animals = sorted({m for m in S.mouse.dropna().unique()})
     if len(animals) > 1:
         by = S.groupby('mouse').size().to_dict()
+        hint = ''
+        if 'mouse_src' in S and (S.mouse_src == 'folder').any():
+            n = int((S.mouse_src == 'folder').sum())
+            hint = (f'\n  NOTE: {n} of these took the animal from the FOLDER NAME because the log\'s '
+                    f'experiment_data.ID had no number in it. Check S[["name","mouse","mouse_raw",'
+                    f'"mouse_src"]] -- if a folder is mis-named, the split is spurious.')
         raise ValueError(
             f'these sessions span {len(animals)} animals: {by}. A learning curve is a WITHIN-animal '
             f'measure -- point discover() at ONE animal\'s folder, or filter with '
-            f'S[S.mouse == "{animals[0]}"].')
+            f'S[S.mouse == "{animals[0]}"].{hint}')
     return animals[0] if animals else None
 
 
