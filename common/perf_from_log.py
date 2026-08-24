@@ -180,18 +180,30 @@ def board_segments(log, min_batches=3):
                  task=classify_task(r[2])) for r in out]
 
 
-def protocol_switch(log, min_batches=3):
-    """(switch_time_ms, segments) for a session whose board changes, else (None, segments).
+def protocol_switch(log, min_batches=3, max_lead_batches=1):
+    """(switch_time_ms, segments) for a session that opens under a different board.
 
-    The switch time is the start of the LAST segment -- i.e. when the final protocol took over.
-    Scoring from there is what Maryam asked for: if the session opens under the old task and then
-    becomes banishment, only count after the change.
+    *** THE SWITCH IS ONLY HONOURED AT THE VERY START OF THE SESSION. ***
+    Maryam: on this animal the leftover board can only appear in TRIAL 0, never later. So a
+    change detected mid-session is not a protocol switch -- it is a gap in the board or a logging
+    artefact -- and truncating there would silently throw away most of a good session while
+    looking perfectly healthy in the output.
+
+    Accordingly a switch is returned only when the pre-switch part is at most `max_lead_batches`
+    trials long (default 1 = trial 0) AND everything after it is a single protocol. Anything else
+    returns None, so the session is scored WHOLE and the oddity is left visible in `segments` for
+    a human to look at, rather than acted on automatically.
     """
     segs = board_segments(log, min_batches=min_batches)
     tasks = [g['task'] for g in segs]
     if len(segs) < 2 or len(set(tasks)) < 2:
         return None, segs
-    return segs[-1]['t0'], segs
+    lead, rest = segs[0], segs[1:]
+    if lead['n_batches'] > max_lead_batches:
+        return None, segs          # a long opening phase is not the trial-0 case; score it whole
+    if len({g['task'] for g in rest}) > 1:
+        return None, segs          # the board changes more than once; not the trial-0 case
+    return rest[0]['t0'], segs
 
 
 def classify_task(effects):
@@ -459,3 +471,31 @@ def score_many(entries):
             lp, vs, lab = (list(e) + [None, None])[:3]
             out.append(score_log(lp, view_scale=vs, label=lab))
     return out
+
+
+def banishment_evidence(log_path):
+    """Raw, unprocessed counts of every place a banishment could show up in one log.
+
+    For settling "is this really a banishment session?" without trusting any
+    classification in between. Each number is a direct count of a log field:
+      collected   what the animal actually took
+      spawn.effect        the icon each spawn event names
+      spawn.current[]     the icons listed as being on the board
+    A session with zeros across all three contains no banishment to find.
+    """
+    log = json.load(open(log_path))
+    coll, sp_eff, cur_eff = {}, {}, {}
+    for c in (log.get('collected') or []):
+        coll[c.get('effect')] = coll.get(c.get('effect'), 0) + 1
+    for b in (log.get('spawns') or []):
+        sp_eff[b.get('effect')] = sp_eff.get(b.get('effect'), 0) + 1
+        for i in (b.get('current') or []):
+            cur_eff[i.get('effect')] = cur_eff.get(i.get('effect'), 0) + 1
+    w = (log.get('worlds') or [{}])[0]
+    return dict(log=str(log_path),
+                datetime=(log.get('experiment_data') or {}).get('datetime'),
+                world=f"{w.get('width')}x{w.get('height')}/icon{w.get('icon_w')}/"
+                      f"{str(w.get('world_texture_file','')).split('/')[-1]}",
+                collected=coll, spawn_effect=sp_eff, on_board=cur_eff,
+                n_spawn_batches=len({b.get('time') for b in (log.get('spawns') or [])}),
+                task=classify_task(log_effects(log)))
