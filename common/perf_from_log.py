@@ -154,7 +154,14 @@ def board_segments(log, min_batches=3):
             runs[-1][3] += 1
         else:
             runs.append([t, t, eff, 1])
-    # absorb runs too short to be a phase into the preceding one
+    # Absorb runs too short to be a phase into the PRECEDING one -- a batch briefly missing an
+    # icon (the animal has just collected it, the replacement has not spawned) is a gap in the
+    # board, not a change of task.
+    #
+    # A short run at the very START is deliberately NOT absorbed: there is nothing before it to
+    # absorb into, and a session that opens with one different batch is exactly the shaping case
+    # (trial 0 under the old task, then the switch). Keeping it is what lets that first trial be
+    # excluded, which is the whole point of the switch detection.
     merged = []
     for r in runs:
         if merged and r[3] < min_batches:
@@ -247,7 +254,14 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
     switch_ms, _segs = protocol_switch(log)
     n_before = 0
     if after_switch and switch_ms is not None:
-        n_before = sum(1 for c in collected if c['time'] < switch_ms)
+        # Count the dropped TRIALS (spawn batches), not the dropped collections. A trial that
+        # started under the old board is finished by a collection that lands at or after the
+        # switch -- the boundaries are the same instant -- so counting collections reports 0 while
+        # a trial really was removed, which reads as "nothing was excluded" when something was.
+        # unique batch TIMES, not raw spawn entries: the log writes one entry per ICON, so
+        # counting entries reports 3 for a single 3-icon trial.
+        n_before = len({b.get('time', 0) for b in (log.get('spawns') or [])
+                        if b.get('time', 0) < switch_ms})
         collected = [c for c in collected if c['time'] >= switch_ms]
         log = dict(log, collected=collected,
                    spawns=[b for b in (log.get('spawns') or [])
