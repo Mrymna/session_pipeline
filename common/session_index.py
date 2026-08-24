@@ -273,7 +273,13 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
     # marker after it ('JPAS_168_2026-07-01_11;35;09_i'), and anchoring to the end left those names
     # with the full timestamp still in them. Stripping mid-name keeps the marker, which is the part
     # that means something: -> 'JPAS_168_2026-07-01_i'.
-    S['session_base'] = [re.sub(r'_\d{2};\d{2};\d{2}', '', str(n)) for n in S['name']]
+    _stripped = [re.sub(r'_\d{2};\d{2};\d{2}', '', str(n)) for n in S['name']]
+    # An experimenter marker can trail the timestamp ('..._11;35;09_i'). It is kept in its OWN
+    # column rather than in the name: it still needs to be visible (it is why `warn` fires), but
+    # inside the name it makes one day's label differ in shape from every other day's, which is
+    # exactly the inconsistency these short names exist to remove.
+    S['marker'] = [m.group(1) if (m := re.search(r'_(\D{1,3})$', v)) else '' for v in _stripped]
+    S['session_base'] = [re.sub(r'_\D{1,3}$', '', v) for v in _stripped]
     S['session'] = S['session_base']
     for day, g in S.groupby('day'):
         if len(g) > 1:
@@ -479,6 +485,58 @@ def one_per_day(S, keep='last', verbose=True):
         else:
             print(f'ONE SESSION PER DAY (keep={keep}): no day held more than one usable session')
     return S
+
+
+def world_protocol_audit(S, verbose=True):
+    """Cross-check the CLASSIFIED protocol against the WORLD, and explain every disagreement.
+
+    Maryam's ground truth is that a world implies a protocol (W4 = banishment, W3 = timeout).
+    That is independent evidence, so where the classifier disagrees with it, one of the two is
+    wrong and it is worth knowing which -- rather than silently accepting a session count that
+    looks too low.
+
+    For each world this prints the majority protocol, then lists every session that departs from
+    it TOGETHER WITH the evidence that decided it: the effects the log actually offered (from the
+    spawn stream), what was collected, and how many spawn batches there were. A session on a
+    banishment world whose log offers no `banish` icon at all is a fact about the log, not a bug
+    in the classifier; a session that offers `banish` and is still not classified as such WOULD
+    be a bug. The printout distinguishes the two.
+    """
+    if 'world_id' not in S.columns:
+        protocol_census(S)
+    rows = []
+    for wid, g in S.groupby('world_id'):
+        maj = g.task.value_counts().idxmax()
+        odd = g[g.task != maj]
+        if verbose:
+            print(f'\n{wid}  ({g.world.iloc[0]})')
+            print(f'   {len(g)} session(s)   majority protocol: {maj}   '
+                  f'{g.task.value_counts().to_dict()}')
+            if len(odd):
+                print(f'   {len(odd)} session(s) do NOT match the majority:')
+                for _, r in odd.iterrows():
+                    off = r.get('effects_offered', '') or '(none)'
+                    print(f"      {r['session']:<26} task={r.task:<18} "
+                          f"offered={off}")
+                    print(f"      {'':<26} collected={r.effects or '(none)'}  "
+                          f"n_collected={r.n_collected}")
+            else:
+                print('   all sessions agree with the majority')
+        for _, r in odd.iterrows():
+            rows.append(dict(world_id=wid, session=r['session'], task=r.task,
+                             majority=maj, effects_offered=r.get('effects_offered', ''),
+                             effects=r.effects, n_collected=r.n_collected))
+    A = pd.DataFrame(rows)
+    if verbose:
+        if len(A):
+            print(f'\n{len(A)} session(s) disagree with their world in total.')
+            print('  offered includes the protocol effect -> classifier bug, tell Claude.')
+            print('  offered does NOT include it          -> the log really has no such icon;')
+            print('                                          group by WORLD instead:')
+            print("                                          group_report(S, world_id='W4')")
+        else:
+            print('\nevery session agrees with its world.')
+    return A
 
 
 def require_single_animal(S):
