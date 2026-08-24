@@ -45,15 +45,36 @@ import numpy as np
 
 SKETCH_W, SKETCH_H = 800, 600
 
-TASK_SIGNATURES = {
-    'timeout_double':    {'timeout', 'double_reward'},
-    'banish_multiplier': {'banish', 'unbanish'},
-}
-POSITIVE = {'timeout_double': {'single_reward', 'double_reward'},
-            'banish_multiplier': {'single_reward'}}
-NEGATIVE = {'timeout_double': {'timeout'}, 'banish_multiplier': {'banish'}}
-# drops delivered per collection; the banish task instead uses the per-collection `multiplier`
-DROPS = {'timeout_double': {'single_reward': 1, 'double_reward': 2}}
+# *** VALENCE IS A PROPERTY OF THE EFFECT, NOT OF THE TASK. ***
+# The per-task POSITIVE/NEGATIVE sets this replaces could not describe a MIXED protocol, and mixed
+# protocols exist: JPAS_0168 ran sessions offering banish+unbanish AND timeout together (a shaping
+# step between the two tasks). Under the old per-task sets those sessions scored with
+# NEGATIVE={'banish'}, so every timeout the animal hit was silently dropped from the hit rate --
+# the D score was computed on an incomplete definition of "wrong". Keying valence on the EFFECT
+# makes any combination score correctly, including combinations nobody has run yet.
+POSITIVE_EFFECTS = {'single_reward', 'double_reward'}
+NEGATIVE_EFFECTS = {'timeout', 'banish'}
+NEUTRAL_EFFECTS = {'unbanish'}          # escape: a collection, but pays nothing and is not a hazard
+# fixed drops per collection, where the effect pays a fixed amount. `single_reward` is absent on
+# purpose: in the banishment task it pays the streak MULTIPLIER, which is read per collection.
+FIXED_DROPS = {'single_reward': 1, 'double_reward': 2, 'timeout': 0, 'banish': 0, 'unbanish': 0}
+
+# Protocol names, in PRECEDENCE order. Each entry is (name, required, forbidden).
+# Precedence matters because protocols overlap during shaping; `banish`/`unbanish` are the
+# unambiguous marker of the banishment task and win even when a timeout is also present.
+TASK_RULES = [
+    ('banish_multiplier', {'banish', 'unbanish'}, set()),
+    ('timeout_double',    {'timeout', 'double_reward'}, set()),
+    ('reward_timeout',    {'timeout', 'single_reward'}, {'double_reward', 'banish'}),
+    ('reward_only',       {'single_reward'}, {'timeout', 'banish', 'double_reward'}),
+]
+
+# retained for callers that still read them; derived from the effect-level sets above
+POSITIVE = {'timeout_double': POSITIVE_EFFECTS, 'banish_multiplier': {'single_reward'},
+            'reward_timeout': {'single_reward'}, 'reward_only': {'single_reward'}}
+NEGATIVE = {'timeout_double': {'timeout'}, 'banish_multiplier': {'banish'},
+            'reward_timeout': {'timeout'}, 'reward_only': set()}
+DROPS = {'timeout_double': FIXED_DROPS, 'reward_timeout': FIXED_DROPS, 'reward_only': FIXED_DROPS}
 
 # known per-session view scales (see common/viewport.py). NOT a default for new animals.
 VIEW_SCALE_BY_MOUSE = {'JPAS_0231': 0.56, 'JPAS_0168': 0.35}
@@ -83,8 +104,17 @@ def log_effects(log):
 
 
 def classify_task(effects):
-    for name, sig in TASK_SIGNATURES.items():
-        if sig & set(effects):
+    """Name the protocol from the effects the session OFFERED.
+
+    Matching requires ALL of a rule's effects and NONE of its forbidden ones, in precedence
+    order. The previous version tested `signature & effects` -- ANY overlap -- which meant a
+    lone `timeout` matched `timeout_double` even with no `double_reward` in the session, and
+    because the first match won, a banishment session that also contained a timeout was labelled
+    timeout_double. Both misreadings were seen in JPAS_0168's real directory.
+    """
+    eff = set(effects)
+    for name, required, forbidden in TASK_RULES:
+        if required <= eff and not (forbidden & eff):
             return name
     return 'unknown'
 
@@ -119,7 +149,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None):
     if task == 'unknown':
         raise ValueError(f'{log_path}: cannot classify task from effects '
                          f'{sorted({c.get("effect") for c in collected})}')
-    pos_set, neg_set = POSITIVE[task], NEGATIVE[task]
+    pos_set, neg_set = POSITIVE_EFFECTS, NEGATIVE_EFFECTS
 
     if view_scale is None:
         view_scale = VIEW_SCALE_BY_MOUSE.get(mouse_id)
@@ -166,10 +196,14 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None):
 
     pos = sum(r['outcome'] in pos_set for r in rows)
     neg = sum(r['outcome'] in neg_set for r in rows)
-    if task == 'banish_multiplier':
-        drops = int(np.nansum([r['mult'] for r in rows if r['outcome'] in pos_set]))
-    else:
-        drops = int(sum(DROPS[task].get(r['outcome'], 0) for r in rows))
+    # per collection: the streak multiplier where one was logged, else the effect's fixed pay.
+    # Chosen per ROW rather than per task so a mixed protocol (multiplier rewards alongside
+    # timeouts) is paid correctly instead of falling into one task's rule.
+    drops = int(np.nansum([
+        r['mult'] if (r['outcome'] == 'single_reward' and r.get('mult') is not None
+                      and not (isinstance(r['mult'], float) and np.isnan(r['mult'])))
+        else FIXED_DROPS.get(r['outcome'], 0)
+        for r in rows]))
 
     wall_min = (rows[-1]['t1'] - rows[0]['t0']) / 60000
     freeze_min = sum(r['freeze_ms'] for r in rows) / 60000

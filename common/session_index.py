@@ -394,6 +394,19 @@ def group_report(S, group_task='banish_multiplier', world_id=None):
             print(f'   {r.label:<14} {r["session"]:<26} world {r.world.split("/")[0]:<10} '
                   f'mult<={r.max_multiplier}{flag}')
         print(f'   -> {int(G.use.sum())} of {len(G)} usable')
+        # A protocol NAME can cover more than one board. JPAS_0168 ran banishment sessions both
+        # with and without a timeout icon (a shaping step), and both are correctly named
+        # banish_multiplier -- but they are not the same experiment: the timeout variant gives the
+        # animal a third icon type and a second way to be wrong, which moves the chance baseline.
+        # Pooling them into one learning curve may be right, but it must be a decision, so the
+        # distinct effect sets in the group are always listed.
+        if 'effects_offered' in G.columns and G.effects_offered.nunique() > 1:
+            print(f'\n   ! this group spans {G.effects_offered.nunique()} different ICON SETS -- '
+                  f'same protocol name, different boards:')
+            for eff, gg in G.groupby('effects_offered'):
+                print(f'       {len(gg):>3} session(s)  {gg.day.min()} .. {gg.day.max()}   {eff}')
+            print('     Pooling them assumes the extra icon type does not change the task. To keep')
+            print('     only one board:  G = G[G.effects_offered == "<the set you want>"]')
         worlds = sorted(G.world.unique())
         if len(worlds) > 1:
             print(f'   !! this group spans {len(worlds)} DIFFERENT worlds: {worlds}')
