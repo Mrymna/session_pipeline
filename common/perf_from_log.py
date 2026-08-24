@@ -61,6 +61,27 @@ VIEW_SCALE_BY_MOUSE = {'JPAS_0231': 0.56, 'JPAS_0168': 0.35}
 FREEZE_GAP_MIN_S = 2.0     # a coord gap this long starting at a timeout = the penalty blackout
 
 
+def log_effects(log):
+    """Every effect this session's protocol OFFERED, from the board and not from behaviour.
+
+    *** Read the SPAWNS, not just `collected`. ***
+    Classifying from `collected` alone makes the protocol label depend on how the animal
+    PERFORMED: a banish_multiplier session in which he never actually got banished has collected
+    effects {single_reward}, matches no signature, and is labelled 'unknown' -- so it is dropped
+    from the group. That is backwards (the protocol is a property of the session, not of the
+    outcome) and it biases the sample in the worst possible direction, removing exactly the
+    sessions where the animal avoided the hazard most successfully.
+
+    The spawn stream records every icon ever put on the board, so it carries the full vocabulary
+    whether or not he touched each type.
+    """
+    eff = {c.get('effect') for c in (log.get('collected') or [])}
+    eff |= {s.get('effect') for s in (log.get('spawns') or [])}
+    eff |= {i.get('effect') for s in (log.get('spawns') or [])
+            for i in (s.get('current') or [])}
+    return {e for e in eff if e}
+
+
 def classify_task(effects):
     for name, sig in TASK_SIGNATURES.items():
         if sig & set(effects):
@@ -94,7 +115,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None):
     log = json.load(open(log_path))
     mouse_id = mouse_id or log_path.parent.name
     collected = sorted(log['collected'], key=lambda c: c['time'])
-    task = classify_task({c.get('effect') for c in collected})
+    task = classify_task(log_effects(log))
     if task == 'unknown':
         raise ValueError(f'{log_path}: cannot classify task from effects '
                          f'{sorted({c.get("effect") for c in collected})}')

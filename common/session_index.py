@@ -170,6 +170,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         rec = dict(dir=str(d), name=d.name, log=str(d / 'log.json'),
                    mouse=None, mouse_raw=None, mouse_src='', datetime=pd.NaT, task='unreadable',
                    view_scale=None, vs_src='', n_collected=0, world='', effects='',
+                   effects_offered='', never_collected='',
                    has_banish=False, has_multiplier=False, max_multiplier=0,
                    use=False, note='', warn='')
         try:
@@ -194,9 +195,15 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
 
         collected = L.get('collected', []) or []
         rec['n_collected'] = len(collected)
+        # what he COLLECTED (behaviour) vs what the protocol OFFERED (the board). The task is
+        # classified from the board -- see pfl.log_effects for why using behaviour drops exactly
+        # the sessions where the animal avoided the hazard.
         effects = sorted({c.get('effect') for c in collected if c.get('effect')})
+        offered = sorted(pfl.log_effects(L))
         rec['effects'] = '+'.join(effects)
-        rec['task'] = pfl.classify_task(set(effects))
+        rec['effects_offered'] = '+'.join(offered)
+        rec['never_collected'] = '+'.join(sorted(set(offered) - set(effects)))
+        rec['task'] = pfl.classify_task(set(offered))
         # evidence for the grouping, read from the log rather than assumed from the task name
         mults = [c.get('multiplier') for c in collected if c.get('multiplier') is not None]
         rec['has_banish'] = 'banish' in effects
@@ -262,15 +269,22 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
     # that carries no information for a per-DAY analysis. Derived from the folder rather than
     # rebuilt from mouse+day so it keeps whatever the folder actually calls the animal
     # ('JPAS_168', not the normalised 'JPAS_0168') and still matches what is on disk.
-    S['session'] = [re.sub(r'_\d{2};\d{2};\d{2}$', '', str(n)) for n in S['name']]
+    # The clock time is stripped from ANYWHERE in the name, not just the end: a folder can carry a
+    # marker after it ('JPAS_168_2026-07-01_11;35;09_i'), and anchoring to the end left those names
+    # with the full timestamp still in them. Stripping mid-name keeps the marker, which is the part
+    # that means something: -> 'JPAS_168_2026-07-01_i'.
+    S['session_base'] = [re.sub(r'_\d{2};\d{2};\d{2}', '', str(n)) for n in S['name']]
+    S['session'] = S['session_base']
     for day, g in S.groupby('day'):
         if len(g) > 1:
             for k, i in enumerate(g.index):
                 S.at[i, 'label'] = f'{day} {chr(97 + k)}'
-                # two sessions on one day would collapse to the SAME short name, so the a/b suffix
-                # has to travel with it -- otherwise the table shows one name twice.
-                if S.at[i, 'session'] in set(S['session']) - {None}:
-                    S.at[i, 'session'] = f'{S.at[i, "session"]}{chr(97 + k)}'
+                # while BOTH sessions of a day are present they need distinct names, so an a/b
+                # suffix is appended. `one_per_day` removes it again from the survivor -- once a day
+                # holds one session the suffix is noise, and worse, it makes the name inconsistent
+                # with every other day.
+                if (S['session_base'] == S.at[i, 'session_base']).sum() > 1:
+                    S.at[i, 'session'] = f'{S.at[i, "session_base"]}{chr(97 + k)}'
 
     # SAME animal + SAME timestamp = the same recording reached by two paths (a copy, a symlinked
     # working dir). Scoring both would count that day twice in every pooled block, so all but the
@@ -452,6 +466,10 @@ def one_per_day(S, keep='last', verbose=True):
             S.at[i, 'note'] = '; '.join(x for x in [S.at[i, 'note'], note] if x)
             S.at[i, 'use'] = False
             dropped.append((day, S.at[i, 'session'], S.at[i, 'time'], S.at[winner, 'session']))
+        # the day now holds ONE usable session, so the a/b disambiguator is no longer needed --
+        # drop it so this day's name matches the form every other day uses.
+        if 'session_base' in S.columns:
+            S.at[winner, 'session'] = S.at[winner, 'session_base']
     if verbose:
         if dropped:
             print(f'ONE SESSION PER DAY (keep={keep}): de-selected {len(dropped)} session(s); '

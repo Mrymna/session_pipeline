@@ -43,6 +43,7 @@ import pandas as pd
 _COMMON = Path(__file__).resolve().parent.parent / 'common'
 sys.path.insert(0, str(_COMMON))
 import session_index as sidx          # noqa: E402
+import geom                           # noqa: E402  -- the SAME geometry df_trials_clean uses
 
 BUILD_VERSION = 1
 
@@ -68,24 +69,72 @@ def _drops(effect, multiplier):
     return float(FIXED_DROPS.get(effect, 0))
 
 
-def session_collections(row):
-    """One row per collection for ONE session."""
+def session_collections(row, geometry=True):
+    """One row per collection for ONE session -- and, with `geometry`, the TRIAL that led to it.
+
+    *** THE TRIAL WINDOW IS THE TIME BETWEEN TWO COLLECTIONS. ***
+    Each collection closes a disjoint window `(previous collection, this collection]`, which is
+    the same definition `df_trials_clean` uses -- in these protocols a collection immediately
+    triggers the next spawn batch, so "spawn batch to spawn batch" and "collection to collection"
+    are the same boundaries. Computing it here means the two tables can be COMPARED rather than
+    taken on trust, and the geometry below calls the very same `common/geom` functions the trial
+    pipeline calls, so a disagreement would be a real disagreement and not a difference of method.
+
+    The first collection of a session has no preceding one; its window opens at the first logged
+    coordinate, and `is_first` marks it so it can be excluded from any window-length statistic.
+
+    NOT identical to df_trials_clean by construction, and should not be assumed so: that table
+    also drops reshuffles (a spawn batch with no collection) and marks degenerate windows. Those
+    are trial-pipeline decisions and are deliberately not reproduced here -- this stays a plain
+    record of the log. Compare on `dur_s` and the geometry columns.
+    """
     L = json.load(open(row['log']))
     ids = _ids(row)
     coll = sorted(L.get('collected', []) or [], key=lambda c: c.get('time', 0))
+    # Spawn-batch times, used only to FLAG a window that spans a board reshuffle (a batch that
+    # produced no collection). df_trials_clean treats such a reshuffle as its own trial, so a
+    # collection-to-collection window silently swallows it -- on JPAS_0168 that is the one trial
+    # out of 77 where the two tables disagree, by 101 s. Flagging it makes the comparison exact
+    # without re-implementing the trial builder's rules here.
+    batch_t = sorted({sp.get('time') for sp in (L.get('spawns') or []) if sp.get('time') is not None})
+    if geometry:
+        t_xy, x_xy, y_xy = geom.load_coords(L)
+        t_th, theta = geom.load_theta(L)
+        w = (L.get('worlds') or [{}])[0]
+        W, H = int(w.get('width', 0)), int(w.get('height', 0))
+        t0_session = float(t_xy[0]) if len(t_xy) else 0.0
     rows = []
+    prev_t = None
     for k, c in enumerate(coll):
         eff = c.get('effect')
         mult = c.get('multiplier')
-        rows.append(dict(**ids, n=k, t_ms=c.get('time'),
-                         effect=eff, texture=c.get('texture'),
-                         valence=VALENCE.get(eff, np.nan),
-                         is_positive=VALENCE.get(eff, 0) > 0,
-                         is_negative=VALENCE.get(eff, 0) < 0,
-                         multiplier=mult, drops=_drops(eff, mult),
-                         x=c.get('x'), y=c.get('y'), loc=c.get('loc'),
-                         icon_id=c.get('ID'), t_spawned=c.get('t_spawned'),
-                         x_char=c.get('x_char'), y_char=c.get('y_char')))
+        t_end = c.get('time')
+        rec = dict(**ids, n=k, t_ms=t_end,
+                   effect=eff, texture=c.get('texture'),
+                   valence=VALENCE.get(eff, np.nan),
+                   is_positive=VALENCE.get(eff, 0) > 0,
+                   is_negative=VALENCE.get(eff, 0) < 0,
+                   multiplier=mult, drops=_drops(eff, mult),
+                   x=c.get('x'), y=c.get('y'), loc=c.get('loc'),
+                   icon_id=c.get('ID'), t_spawned=c.get('t_spawned'),
+                   x_char=c.get('x_char'), y_char=c.get('y_char'))
+        if geometry:
+            t_start = prev_t if prev_t is not None else t0_session
+            rec.update(t_start_ms=t_start, t_end_ms=t_end,
+                       dur_s=(t_end - t_start) / 1000.0, is_first=prev_t is None)
+            tt, xx, yy = geom.slice_track(t_xy, x_xy, y_xy, t_start, t_end)
+            msp, ssp = geom.speed_stats(tt, xx, yy)
+            _, align = geom.heading_to_target(t_th, theta, t_xy, x_xy, y_xy,
+                                              (c.get('x'), c.get('y')), t_start, t_end)
+            n_batches = sum(1 for b in batch_t if t_start < b < t_end)
+            rec.update(n_coords=len(tt),
+                       spans_reshuffle=n_batches > 0,
+                       n_reshuffles=n_batches,
+                       path_efficiency=geom.path_efficiency(xx, yy),
+                       time_in_corner=geom.time_in_corner(xx, yy, W, H),
+                       mean_speed=msp, speed_std=ssp, heading_align=align)
+        rows.append(rec)
+        prev_t = t_end
     return pd.DataFrame(rows)
 
 
