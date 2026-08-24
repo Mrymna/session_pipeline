@@ -62,11 +62,18 @@ FIXED_DROPS = {'single_reward': 1, 'double_reward': 2, 'timeout': 0, 'banish': 0
 # Protocol names, in PRECEDENCE order. Each entry is (name, required, forbidden).
 # Precedence matters because protocols overlap during shaping; `banish`/`unbanish` are the
 # unambiguous marker of the banishment task and win even when a timeout is also present.
+# Each rule: `all` must be present, `any` needs at least one, `none` must be absent.
+# `any` exists for the banishment task specifically: the two escape rings live INSIDE the
+# banishment world, so a snapshot of the normal-world board shows `banish` without `unbanish`.
+# Requiring both would leave every such board unclassified -- which is what happened when this was
+# first applied to within-session board segments rather than to whole logs.
 TASK_RULES = [
-    ('banish_multiplier', {'banish', 'unbanish'}, set()),
-    ('timeout_double',    {'timeout', 'double_reward'}, set()),
-    ('reward_timeout',    {'timeout', 'single_reward'}, {'double_reward', 'banish'}),
-    ('reward_only',       {'single_reward'}, {'timeout', 'banish', 'double_reward'}),
+    dict(name='banish_multiplier', all=set(), any={'banish', 'unbanish'}, none=set()),
+    dict(name='timeout_double',    all={'timeout', 'double_reward'}, any=set(), none=set()),
+    dict(name='reward_timeout',    all={'timeout', 'single_reward'}, any=set(),
+         none={'double_reward', 'banish', 'unbanish'}),
+    dict(name='reward_only',       all={'single_reward'}, any=set(),
+         none={'timeout', 'banish', 'double_reward', 'unbanish'}),
 ]
 
 # retained for callers that still read them; derived from the effect-level sets above
@@ -103,6 +110,83 @@ def log_effects(log):
     return {e for e in eff if e}
 
 
+def board_segments(log, min_batches=3):
+    """Split a session where the BOARD CHANGES PART-WAY THROUGH.
+
+    A session is not always one protocol. On JPAS_0168 the shaping sessions begin under the old
+    task and switch to the new one mid-recording -- the first trials offer a timeout, and only
+    later do the banishment icons appear. Scoring such a session as one thing mixes two different
+    experiments, with different icon counts and therefore different chance baselines, into a
+    single number.
+
+    The board is read from each spawn batch's `current` list (what was actually on screen), so
+    the switch is detected from the data rather than assumed from the date. A segment is a run of
+    consecutive batches offering the SAME set of effects.
+
+    `min_batches` drops runs too short to be a real protocol phase -- a single batch that happens
+    to be missing an icon (because the animal had just collected it and the replacement had not
+    spawned yet) is a gap in the board, not a change of task. Without this the board looks like it
+    changes constantly.
+
+    Returns a list of dicts: t0, t1, effects (frozenset), n_batches, task.
+    """
+    sp = sorted(log.get('spawns') or [], key=lambda x: x.get('time', 0))
+    batches = {}
+    for b in sp:
+        t = b.get('time')
+        if t is None:
+            continue
+        cur = b.get('current') or []
+        eff = {i.get('effect') for i in cur if i.get('effect')}
+        if not eff and b.get('effect'):
+            eff = {b['effect']}
+        # keep the FULLEST list logged at a timestamp, as elsewhere in the pipeline
+        if t not in batches or len(eff) > len(batches[t]):
+            batches[t] = eff
+    if not batches:
+        return []
+    items = sorted(batches.items())
+
+    runs = []
+    for t, eff in items:
+        if runs and runs[-1][2] == eff:
+            runs[-1][1] = t
+            runs[-1][3] += 1
+        else:
+            runs.append([t, t, eff, 1])
+    # absorb runs too short to be a phase into the preceding one
+    merged = []
+    for r in runs:
+        if merged and r[3] < min_batches:
+            merged[-1][1] = r[1]
+            merged[-1][3] += r[3]
+        else:
+            merged.append(r)
+    # re-merge neighbours that became identical after absorbing
+    out = []
+    for r in merged:
+        if out and out[-1][2] == r[2]:
+            out[-1][1] = r[1]; out[-1][3] += r[3]
+        else:
+            out.append(r)
+    return [dict(t0=r[0], t1=r[1], effects=frozenset(r[2]), n_batches=r[3],
+                 task=classify_task(r[2])) for r in out]
+
+
+def protocol_switch(log, min_batches=3):
+    """(switch_time_ms, segments) for a session whose board changes, else (None, segments).
+
+    The switch time is the start of the LAST segment -- i.e. when the final protocol took over.
+    Scoring from there is what Maryam asked for: if the session opens under the old task and then
+    becomes banishment, only count after the change.
+    """
+    segs = board_segments(log, min_batches=min_batches)
+    tasks = [g['task'] for g in segs]
+    if len(segs) < 2 or len(set(tasks)) < 2:
+        return None, segs
+    return segs[-1]['t0'], segs
+
+
 def classify_task(effects):
     """Name the protocol from the effects the session OFFERED.
 
@@ -113,9 +197,11 @@ def classify_task(effects):
     timeout_double. Both misreadings were seen in JPAS_0168's real directory.
     """
     eff = set(effects)
-    for name, required, forbidden in TASK_RULES:
-        if required <= eff and not (forbidden & eff):
-            return name
+    for r in TASK_RULES:
+        if (r['all'] <= eff
+                and (not r['any'] or (r['any'] & eff))
+                and not (r['none'] & eff)):
+            return r['name']
     return 'unknown'
 
 
@@ -139,12 +225,33 @@ def _spawn_batches(log):
     return sorted(batches.items())
 
 
-def score_log(log_path, view_scale=None, mouse_id=None, label=None):
-    """Score one session from its log.json. Returns a flat dict, one row per session."""
+def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch=True):
+    """Score one session from its log.json. Returns a flat dict, one row per session.
+
+    `after_switch` (default True): if the BOARD CHANGES PROTOCOL part-way through the session,
+    score only the final segment. Shaping sessions open under the old task and switch to the new
+    one mid-recording, so the opening trials are a different experiment -- different icon types,
+    a different number of ways to be wrong, and therefore a different chance baseline. Averaging
+    across the switch produces a number that describes neither half.
+
+    The trials before the switch are not deleted, they are reported: `switch_ms` says when the
+    change happened and `n_before_switch` how many collections were dropped, so a session scored
+    on a fraction of its length is visible rather than silently short. Pass after_switch=False to
+    score the whole recording regardless.
+    """
     log_path = Path(log_path)
     log = json.load(open(log_path))
     mouse_id = mouse_id or log_path.parent.name
     collected = sorted(log['collected'], key=lambda c: c['time'])
+
+    switch_ms, _segs = protocol_switch(log)
+    n_before = 0
+    if after_switch and switch_ms is not None:
+        n_before = sum(1 for c in collected if c['time'] < switch_ms)
+        collected = [c for c in collected if c['time'] >= switch_ms]
+        log = dict(log, collected=collected,
+                   spawns=[b for b in (log.get('spawns') or [])
+                           if b.get('time', 0) >= switch_ms])
     task = classify_task(log_effects(log))
     if task == 'unknown':
         raise ValueError(f'{log_path}: cannot classify task from effects '
@@ -296,9 +403,17 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None):
 
     from scipy.stats import binomtest
     acc = pos / (pos + neg) if (pos + neg) else np.nan
-    toD = lambda p0, v=None: ((acc if v is None else v) - p0) / (1 - p0)
+    def toD(p0, v=None):
+        # D is the fraction of the headroom ABOVE chance that was captured, so it is undefined when
+        # there is no headroom: chance == 1 means every icon he could see was positive, and no
+        # behaviour could have scored better. Return nan rather than dividing by zero -- a session
+        # like that is unscorable, not infinitely good, and it must not take the whole run down.
+        if p0 is None or not np.isfinite(p0) or p0 >= 1:
+            return np.nan
+        return ((acc if v is None else v) - p0) / (1 - p0)
     lo, hi = _wilson(pos, pos + neg)
-    return dict(
+    _switch_info = dict(switch_ms=switch_ms, n_before_switch=n_before)
+    return dict(**_switch_info, 
         mouse=mouse_id, label=label or mouse_id, task=task, log=str(log_path),
         view_scale=view_scale, n_trials=len(rows),
         pos=pos, neg=neg, drops=drops, acc=acc,
