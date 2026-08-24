@@ -163,10 +163,10 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
 
     rows = []
     bar = _progress(dirs, f'reading {len(dirs)} log(s)', enabled=progress,
-                    labels=[d.name for d in dirs])
+                    labels=[re.sub(r'_\\d{2};\\d{2};\\d{2}$', '', d.name) for d in dirs])
     for d in bar:
         if hasattr(bar, 'set_postfix_str'):
-            bar.set_postfix_str(d.name[:38])
+            bar.set_postfix_str(re.sub(r'_\\d{2};\\d{2};\\d{2}$', '', d.name)[:32])
         rec = dict(dir=str(d), name=d.name, log=str(d / 'log.json'),
                    mouse=None, mouse_raw=None, mouse_src='', datetime=pd.NaT, task='unreadable',
                    view_scale=None, vs_src='', n_collected=0, world='', effects='',
@@ -255,10 +255,22 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
     # a day can hold MORE THAN ONE session (seen in the real directory: two on 2026-07-22), so the
     # date alone is not a unique label -- repeats get an a/b suffix, in time order.
     S['label'] = [r.day if isinstance(r.day, str) else r['name'] for _, r in S.iterrows()]
+    # SHORT DISPLAY NAME: the folder name minus the trailing _HH;MM;SS, e.g.
+    # 'JPAS_168_2026-06-19_10;35;09' -> 'JPAS_168_2026-06-19'.
+    # `name` stays the true folder name -- it is how a session is found on disk and how duplicates
+    # are reported -- but it is too long to read in a 40-row table, and the clock time is the part
+    # that carries no information for a per-DAY analysis. Derived from the folder rather than
+    # rebuilt from mouse+day so it keeps whatever the folder actually calls the animal
+    # ('JPAS_168', not the normalised 'JPAS_0168') and still matches what is on disk.
+    S['session'] = [re.sub(r'_\d{2};\d{2};\d{2}$', '', str(n)) for n in S['name']]
     for day, g in S.groupby('day'):
         if len(g) > 1:
             for k, i in enumerate(g.index):
                 S.at[i, 'label'] = f'{day} {chr(97 + k)}'
+                # two sessions on one day would collapse to the SAME short name, so the a/b suffix
+                # has to travel with it -- otherwise the table shows one name twice.
+                if S.at[i, 'session'] in set(S['session']) - {None}:
+                    S.at[i, 'session'] = f'{S.at[i, "session"]}{chr(97 + k)}'
 
     # SAME animal + SAME timestamp = the same recording reached by two paths (a copy, a symlinked
     # working dir). Scoring both would count that day twice in every pooled block, so all but the
@@ -359,7 +371,7 @@ def group_report(S, group_task='banish_multiplier', world_id=None):
             flag = '' if r.use else f'   [EXCLUDED: {r.note}]'
             if r.use and r.get('warn'):
                 flag = f'   [warn: {r.warn}]'
-            print(f'   {r.label:<14} {r["name"]:<32} world {r.world.split("/")[0]:<10} '
+            print(f'   {r.label:<14} {r["session"]:<26} world {r.world.split("/")[0]:<10} '
                   f'mult<={r.max_multiplier}{flag}')
         print(f'   -> {int(G.use.sum())} of {len(G)} usable')
         worlds = sorted(G.world.unique())
@@ -436,10 +448,10 @@ def one_per_day(S, keep='last', verbose=True):
             if i == winner:
                 continue
             note = (f"{'later' if keep == 'last' else 'earlier'} session "
-                    f"{S.at[winner, 'name']} kept for {day} (one session per day)")
+                    f"{S.at[winner, 'session']} kept for {day} (one session per day)")
             S.at[i, 'note'] = '; '.join(x for x in [S.at[i, 'note'], note] if x)
             S.at[i, 'use'] = False
-            dropped.append((day, S.at[i, 'name'], S.at[i, 'time'], S.at[winner, 'name']))
+            dropped.append((day, S.at[i, 'session'], S.at[i, 'time'], S.at[winner, 'session']))
     if verbose:
         if dropped:
             print(f'ONE SESSION PER DAY (keep={keep}): de-selected {len(dropped)} session(s); '
@@ -486,13 +498,13 @@ def score(S, verbose=True, progress=True):
     out = []
     todo = [r for _, r in S.iterrows()]
     bar = _progress(todo, f'scoring {int(S.use.sum())} of {len(todo)} session(s)',
-                    enabled=progress, labels=[str(r['name']) for r in todo])
+                    enabled=progress, labels=[str(r.get('session', r['name'])) for r in todo])
     for r in bar:
         if hasattr(bar, 'set_postfix_str'):
-            bar.set_postfix_str(str(r['name'])[:38])
+            bar.set_postfix_str(str(r.get('session', r['name']))[:32])
         if not r.use:
             if verbose:
-                print(f'  -- skipped {r["name"]}: {r.note}')
+                print(f'  -- skipped {r.get("session", r["name"])}: {r.note}')
             continue
         try:
             rec = pfl.score_log(r.log, view_scale=r.view_scale, mouse_id=r.mouse, label=r.label)
@@ -501,7 +513,7 @@ def score(S, verbose=True, progress=True):
             out.append(rec)
         except Exception as ex:
             if verbose:
-                print(f'  !! failed {r["name"]}: {type(ex).__name__}: {ex}')
+                print(f'  !! failed {r.get("session", r["name"])}: {type(ex).__name__}: {ex}')
     R = pd.DataFrame(out)
     if len(R):
         R = R.sort_values('datetime', na_position='last').reset_index(drop=True)
@@ -512,7 +524,7 @@ if __name__ == '__main__':
     import sys
     root = sys.argv[1] if len(sys.argv) > 1 else '.'
     S = discover(root)
-    cols = ['name', 'mouse', 'day', 'task', 'view_scale', 'vs_src', 'n_collected', 'use', 'note']
+    cols = ['session', 'mouse', 'day', 'task', 'view_scale', 'vs_src', 'n_collected', 'use', 'note']
     print(S[cols].to_string(index=False) if len(S) else 'no sessions found')
 
 
