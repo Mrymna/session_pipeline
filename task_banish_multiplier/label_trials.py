@@ -66,10 +66,18 @@ def _overshoot(r):
     return bool(tail.max() > RETREAT and d[-1] < COLLISION_R + 60)
 
 
-def run(session_dir, write=True, verbose=True):
+def run(session_dir, write=True, verbose=True, dfc=None, sess=None, figures=True):
+    """Add error / conflict labels to one session's trial table.
+
+    `dfc` / `sess` (optional) take the trial table and the session fields IN MEMORY instead of
+    reading `df_trials_clean.pkl` and `session.json`; `figures=False` skips the diagnostic PNGs.
+    Together these let the performance folder label a raw server session without reading or
+    writing anything in the session directory. Passing nothing keeps the original behaviour.
+    """
     d = Path(session_dir).resolve()
-    sess = json.load(open(d / 'session.json'))
-    df = pd.read_pickle(d / 'df_trials_clean.pkl')
+    if sess is None:
+        sess = json.load(open(d / 'session.json'))
+    df = dfc if dfc is not None else pd.read_pickle(d / "df_trials_clean.pkl")
     if 'cluster_name' not in df.columns:
         raise SystemExit('run cluster_paths.py first (need cluster_name for the conflict stratifier)')
 

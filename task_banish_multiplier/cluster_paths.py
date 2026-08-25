@@ -87,7 +87,7 @@ def build_features(dfc):
     return pd.DataFrame(rows).set_index('idx')
 
 
-def _merge_small(labels, X):
+def _merge_small(labels, X, verbose=True):
     for _ in range(len(set(labels))):
         sizes = pd.Series(labels).value_counts()
         small = sizes[sizes < MIN_CLUSTER].index.tolist()
@@ -99,7 +99,8 @@ def _merge_small(labels, X):
             if not large:
                 break
             nearest = large[int(np.argmin([np.linalg.norm(centers[sc] - centers[lc]) for lc in large]))]
-            print(f'    merging cluster {sc} (n={sizes[sc]}) -> {nearest}')
+            if verbose:
+                print(f'    merging cluster {sc} (n={sizes[sc]}) -> {nearest}')
             labels = np.where(labels == sc, nearest, labels)
     uniq = sorted(set(labels))
     return np.array([uniq.index(l) for l in labels])
@@ -124,7 +125,7 @@ def _name_by_rank(good, k):
     return names
 
 
-def cluster(dfc, F, features, prefix):
+def cluster(dfc, F, features, prefix, verbose=True):
     good = F[(F['usable']) & F[features].notna().all(axis=1)].copy()
     X = StandardScaler().fit_transform(good[features].values)
 
@@ -135,10 +136,11 @@ def cluster(dfc, F, features, prefix):
         if best is None or s > best[0]:
             best = (s, k, lab)
     _, k0, labels = best
-    print(f'  [{prefix}] silhouette picks k={k0} (' +
+    if verbose:
+        print(f'  [{prefix}] silhouette picks k={k0} (' +
           ', '.join(f'k{k}={silhouette_score(X, KMeans(k, random_state=SEED, n_init=10).fit_predict(X)):.2f}'
                     for k in K_CANDIDATES) + ')')
-    labels = _merge_small(labels, X)
+    labels = _merge_small(labels, X, verbose=verbose)
     k = len(set(labels))
     good['cluster'] = labels
 
@@ -157,15 +159,16 @@ def cluster(dfc, F, features, prefix):
         dfc.loc[i, prefix + '_pca1'] = row.pca1
         dfc.loc[i, prefix + '_pca2'] = row.pca2
 
-    print(f'  [{prefix}] k={k}, silhouette={sil:.3f}, n={len(good)} '
-          f'(excluded {int((~F["usable"]).sum())} non-analyzable):')
-    for c in range(k):
-        d = good[good.cluster == c]
-        oc = d.outcome.value_counts().to_dict()
-        print(f'    {names[c]:16s} n={len(d):3d}  eff={d.efficiency.mean():.2f}  '
-              f'corner={d.time_in_corner.mean():.2f}  speed={d.mean_speed.mean():.1f}  '
-              f'dur={d.effective_duration_s.mean():.1f}s  joy_fine={d.joy_fine.mean():.2f}  '
-              f'sweep={d.whisk_sweep.mean():.3f}  align={d.heading_align.mean():+.3f}  {oc}')
+    if verbose:
+        print(f'  [{prefix}] k={k}, silhouette={sil:.3f}, n={len(good)} '
+              f'(excluded {int((~F["usable"]).sum())} non-analyzable):')
+        for c in range(k):
+            d = good[good.cluster == c]
+            oc = d.outcome.value_counts().to_dict()
+            print(f'    {names[c]:16s} n={len(d):3d}  eff={d.efficiency.mean():.2f}  '
+                  f'corner={d.time_in_corner.mean():.2f}  speed={d.mean_speed.mean():.1f}  '
+                  f'dur={d.effective_duration_s.mean():.1f}s  joy_fine={d.joy_fine.mean():.2f}  '
+                  f'sweep={d.whisk_sweep.mean():.3f}  align={d.heading_align.mean():+.3f}  {oc}')
     return good, names, k, sil, X
 
 
@@ -343,21 +346,37 @@ def multiplier_outcome_report(good, names, k, X, out_path):
     return dict(p=pv, sil_geom=sil_g, sil_with_mult=sil_m, agree=agree)
 
 
-def run(session_dir, write=True, verbose=True):
+def run(session_dir, write=True, verbose=True, dfc=None, sess=None, figures=True):
+    """Cluster the trials of one session by path geometry.
+
+    `dfc` / `sess` (optional) take the trial table and the session fields IN MEMORY instead of
+    reading `df_trials_clean.pkl` and `session.json`; `figures=False` skips the diagnostic PNGs.
+    Together these let the performance folder cluster a raw server session without reading or
+    writing anything in the session directory. Passing nothing keeps the original behaviour.
+    """
     d = Path(session_dir).resolve()
-    sess = json.load(open(d / 'session.json'))
-    dbg = d / 'debug'; dbg.mkdir(exist_ok=True)
-    dfc = pd.read_pickle(d / 'df_trials_clean.pkl')
+    if sess is None:
+        sess = json.load(open(d / 'session.json'))
+    dbg = d / 'debug'
+    if figures:
+        dbg.mkdir(exist_ok=True)
+    if dfc is None:
+        dfc = pd.read_pickle(d / 'df_trials_clean.pkl')
     F = build_features(dfc)
 
-    feature_selection_report(F, dbg / 'feature_selection.png')
-    print(f"\nPRIMARY path clustering for {sess['mouse_id']} (PATH-GEOMETRY features, banish/unbanish included):")
-    good, names, k, sil, X = cluster(dfc, F, FEATURES, 'cluster')
-    diagnostic_fig(good, names, k, X, FEATURES,
-                   f"{sess['mouse_id']} path clustering - PATH-GEOMETRY features (efficiency, speed std, "
-                   "time-in-corner, duration); motor/whisker/heading tested SEPARATELY as outcomes; "
-                   "reshuffle/incomplete/degenerate excluded, merge < 5", dbg / 'path_clustering.png')
-    multiplier_outcome_report(good, names, k, X, dbg / 'multiplier_outcome.png')
+    if figures:
+        feature_selection_report(F, dbg / 'feature_selection.png')
+    if verbose:
+        print(f"\nPRIMARY path clustering for {sess['mouse_id']} "
+              f"(PATH-GEOMETRY features, banish/unbanish included):")
+    good, names, k, sil, X = cluster(dfc, F, FEATURES, 'cluster', verbose=verbose)
+    if figures:
+        diagnostic_fig(good, names, k, X, FEATURES,
+                       f"{sess['mouse_id']} path clustering - PATH-GEOMETRY features (efficiency, speed std, "
+                       "time-in-corner, duration); motor/whisker/heading tested SEPARATELY as outcomes; "
+                       "reshuffle/incomplete/degenerate excluded, merge < 5", dbg / 'path_clustering.png')
+    if figures:
+        multiplier_outcome_report(good, names, k, X, dbg / 'multiplier_outcome.png')
 
     if write:
         dfc.to_pickle(d / 'df_trials_clean.pkl')

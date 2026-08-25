@@ -448,7 +448,7 @@ def world_report(S):
             print(f'  {wsig}\n      {len(g)} session(s)  ->  view_scale {vs[0]}  (from {srcs})')
 
 
-def one_per_day(S, keep='last', verbose=True):
+def one_per_day(S, keep='last', verbose=True, mark_only=False):
     """Collapse days that hold more than one session down to a single session per day.
 
     The real server directory does record two sessions on one date (seen on 2026-07-22), and for a
@@ -471,6 +471,12 @@ def one_per_day(S, keep='last', verbose=True):
     if not len(S) or 'day' not in S:
         return S
     S = S.copy()
+    # `mark_only` flags the losers instead of clearing `use`. The dataset build wants EVERY session
+    # kept as a row with the duplicate visible as a column, so that filtering is an explicit choice
+    # made at analysis time rather than a deletion baked into the build.
+    if 'is_dup_day' not in S.columns:
+        S['is_dup_day'] = False
+        S['keep_of_day'] = True
     dropped = []
     for day, g in S[S.use & S.day.notna()].groupby('day'):
         if len(g) < 2:
@@ -483,12 +489,17 @@ def one_per_day(S, keep='last', verbose=True):
             note = (f"{'later' if keep == 'last' else 'earlier'} session "
                     f"{S.at[winner, 'session']} kept for {day} (one session per day)")
             S.at[i, 'note'] = '; '.join(x for x in [S.at[i, 'note'], note] if x)
-            S.at[i, 'use'] = False
+            S.at[i, 'is_dup_day'] = True
+            S.at[i, 'keep_of_day'] = False
+            if not mark_only:
+                S.at[i, 'use'] = False
             dropped.append((day, S.at[i, 'session'], S.at[i, 'time'], S.at[winner, 'session']))
         # the day now holds ONE usable session, so the a/b disambiguator is no longer needed --
         # drop it so this day's name matches the form every other day uses.
         if 'session_base' in S.columns:
             S.at[winner, 'session'] = S.at[winner, 'session_base']
+        S.at[winner, 'is_dup_day'] = True
+        S.at[winner, 'keep_of_day'] = True
     if verbose:
         if dropped:
             print(f'ONE SESSION PER DAY (keep={keep}): de-selected {len(dropped)} session(s); '
@@ -617,8 +628,14 @@ if __name__ == '__main__':
     print(S[cols].to_string(index=False) if len(S) else 'no sessions found')
 
 
-def blocks_of(R, size=3):
-    """Pool consecutive sessions into blocks of `size` for the conflict-trial criterion.
+def blocks_of(R, size=None):
+    """Pool consecutive sessions into blocks for the conflict-trial criterion.
+
+    *** size=None pools EVERY session into ONE block. ***
+    That is the default because it is the question to ask first: what does the whole world say?
+    Binning is a way to TEST a pattern once you have seen one, and choosing a bin width before
+    looking is how a pattern gets manufactured -- so the un-binned answer comes first, and a
+    specific `size` is a deliberate second step.
 
     WHY POOL: one session yields only ~15 conflict trials, so its interval is ~+-0.25 -- too wide to
     read. Pooling ~3 sessions puts ~45 trials in a block, which is the smallest unit that can show a
@@ -627,6 +644,8 @@ def blocks_of(R, size=3):
     Returns a DataFrame with one row per block: pooled conflict and control rates + Wilson intervals.
     """
     rows = []
+    size = len(R) if size is None else size
+    size = max(1, int(size))
     for b0 in range(0, len(R), size):
         g = R.iloc[b0:b0 + size]
         kc, nc = int(g.k_conflict.sum()), int(g.n_conflict.sum())
@@ -634,7 +653,9 @@ def blocks_of(R, size=3):
         clo, chi = pfl._wilson(kc, nc)
         alo, ahi = pfl._wilson(ka, na)
         rows.append(dict(
-            block=f'{b0 // size + 1}', label=f'{g.label.iloc[0]}\n..{g.label.iloc[-1]}',
+            block='all' if size >= len(R) else f'{b0 // size + 1}',
+            label=(f'ALL {len(g)} sessions\n{g.label.iloc[0]} .. {g.label.iloc[-1]}'
+                   if size >= len(R) else f'{g.label.iloc[0]}\n..{g.label.iloc[-1]}'),
             n_sessions=len(g),
             k_conflict=kc, n_conflict=nc, conflict_p=kc / nc if nc else np.nan,
             conflict_lo=clo, conflict_hi=chi,

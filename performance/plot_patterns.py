@@ -201,3 +201,114 @@ def half_split(C, R=None, out_path=None):
     if out_path:
         fig.savefig(out_path, dpi=110); print(f'  wrote {out_path}')
     return fig, out, P
+
+
+# ---------------------------------------------------------------------------------------------
+# DESCRIPTIVE overview -- "what have I actually got?", before any performance question is asked.
+# These read df_sessions / df_trials straight from the saved dataset; nothing is scored or fitted.
+# ---------------------------------------------------------------------------------------------
+
+def overview(X, T=None, out_path=None):
+    """How many sessions per mouse per world, how long they run, how many trials they carry.
+
+    Deliberately the FIRST thing to look at: a D curve is unreadable without knowing that a point
+    is one 40-minute session of 80 trials and the next is a 10-minute session of 12. Panels (d)
+    and (e) are what tell you whether two points are comparable at all.
+    """
+    fig, ax = plt.subplots(2, 3, figsize=(17, 9))
+
+    a = ax[0, 0]
+    ct = X.pivot_table(index='mouse', columns='world_id', values='session',
+                       aggfunc='count').fillna(0)
+    ct.plot(kind='bar', stacked=True, ax=a, colormap='tab20', width=.7)
+    a.set_ylabel('sessions'); a.set_xlabel('')
+    a.legend(fontsize=7, title='world', ncol=2)
+    a.set_title('(a) SESSIONS per mouse per WORLD', fontsize=10, fontweight='bold')
+    a.tick_params(axis='x', rotation=0); a.grid(alpha=.2, axis='y')
+
+    a = ax[0, 1]
+    ct2 = X.pivot_table(index='mouse', columns='task', values='session',
+                        aggfunc='count').fillna(0)
+    ct2.plot(kind='bar', stacked=True, ax=a, colormap='Set2', width=.7)
+    a.set_ylabel('sessions'); a.set_xlabel('')
+    a.legend(fontsize=7, title='protocol')
+    a.set_title('(b) SESSIONS per mouse per PROTOCOL', fontsize=10, fontweight='bold')
+    a.tick_params(axis='x', rotation=0); a.grid(alpha=.2, axis='y')
+
+    a = ax[0, 2]
+    for m, g in X.groupby('mouse'):
+        g = g.sort_values('day')
+        for task, gg in g.groupby('task'):
+            a.plot(pd.to_datetime(gg.day), [m] * len(gg), 'o', ms=7, alpha=.8, label=task)
+    h, l = a.get_legend_handles_labels()
+    seen = dict(zip(l, h))
+    a.legend(seen.values(), seen.keys(), fontsize=7)
+    a.set_title('(c) TIMELINE -- which protocol, which day', fontsize=10, fontweight='bold')
+    a.tick_params(axis='x', rotation=45, labelsize=7); a.grid(alpha=.2)
+
+    a = ax[1, 0]
+    a.bar(range(len(X)), X.wall_min.to_numpy(float), color='#d35400')
+    _thin(a, list(X.label))
+    a.set_ylabel('minutes')
+    a.set_title('(d) SESSION LENGTH (wall clock)', fontsize=10, fontweight='bold')
+    a.grid(alpha=.2, axis='y')
+
+    a = ax[1, 1]
+    a.bar(range(len(X)), X.n_trials_total.to_numpy(float), color='#16a085')
+    _thin(a, list(X.label))
+    a.set_ylabel('trials')
+    a.set_title('(e) TRIALS per session', fontsize=10, fontweight='bold')
+    a.grid(alpha=.2, axis='y')
+
+    a = ax[1, 2]
+    if T is not None and 'outcome' in T:
+        oc = T.pivot_table(index='task', columns='outcome', values='session',
+                           aggfunc='count').fillna(0)
+        oc = oc.div(oc.sum(axis=1), axis=0)
+        oc.plot(kind='barh', stacked=True, ax=a, colormap='tab20', width=.6)
+        a.legend(fontsize=7, ncol=2, loc='lower right')
+        a.set_xlabel('fraction of trials'); a.set_ylabel('')
+    a.set_title('(f) OUTCOME MIX per protocol', fontsize=10, fontweight='bold')
+    a.grid(alpha=.2, axis='x')
+
+    fig.suptitle('What is in the dataset -- descriptive only, nothing scored',
+                 fontweight='bold', fontsize=13)
+    plt.tight_layout(rect=[0, 0, 1, 0.955])
+    if out_path:
+        fig.savefig(out_path, dpi=110); print(f'  wrote {out_path}')
+    return fig
+
+
+def pooled_criterion(B, out_path=None, title=''):
+    """The criterion with EVERY session of a world pooled into one block (blocks_of(size=None)).
+
+    The un-binned answer, which is the one to read first. `B` is a one-row blocks table; the panel
+    shows CONFLICT (hazard was nearer -- he must override proximity) against CONTROL (reward was
+    nearer -- the easy case), with Wilson intervals. The two must SEPARATE for the animal to be
+    recognising the icon: if both move together he has merely stopped following proximity.
+    """
+    fig, a = plt.subplots(figsize=(7.5, 5.5))
+    r = B.iloc[0]
+    for i, (k, lo, hi, lbl, col) in enumerate((
+            ('control_p', 'control_lo', 'control_hi', 'CONTROL\nreward nearer (easy)', '#7f8c8d'),
+            ('conflict_p', 'conflict_lo', 'conflict_hi',
+             'CONFLICT\nhazard nearer (must override)', '#e67e22'))):
+        a.bar(i, r[k], color=col, width=.55)
+        a.errorbar(i, r[k], yerr=[[r[k] - r[lo]], [r[hi] - r[k]]], fmt='none',
+                   ecolor='k', capsize=6, lw=1.6)
+        n = int(r['n_control'] if i == 0 else r['n_conflict'])
+        kk = int(r['k_control'] if i == 0 else r['k_conflict'])
+        a.text(i, 0.03, f'{r[k]:.3f}\n{kk}/{n}', ha='center', color='w', fontweight='bold')
+        a.set_xticks([0, 1])
+    a.set_xticklabels(['CONTROL\nreward nearer (easy)',
+                       'CONFLICT\nhazard nearer (must override)'], fontsize=9)
+    a.axhline(0.5, ls=':', color='k', lw=1)
+    a.set_ylim(0, 1); a.set_ylabel('P(collected the reward)')
+    a.set_title((title or 'THE CRITERION, all sessions pooled') +
+                f'\n{int(r.n_sessions)} sessions  |  gap (control - conflict) = '
+                f'{r.control_p - r.conflict_p:+.3f}', fontsize=11, fontweight='bold')
+    a.grid(alpha=.2, axis='y')
+    plt.tight_layout()
+    if out_path:
+        fig.savefig(out_path, dpi=110); print(f'  wrote {out_path}')
+    return fig

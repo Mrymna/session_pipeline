@@ -70,18 +70,32 @@ FIXED_DROPS = {'single_reward': 1, 'double_reward': 2, 'timeout': 0, 'banish': 0
 TASK_RULES = [
     dict(name='banish_multiplier', all=set(), any={'banish', 'unbanish'}, none=set()),
     dict(name='timeout_double',    all={'timeout', 'double_reward'}, any=set(), none=set()),
-    dict(name='reward_timeout',    all={'timeout', 'single_reward'}, any=set(),
+    dict(name='timeout_multiplier', all={'timeout', 'single_reward'}, any=set(),
          none={'double_reward', 'banish', 'unbanish'}),
     dict(name='reward_only',       all={'single_reward'}, any=set(),
          none={'timeout', 'banish', 'double_reward', 'unbanish'}),
 ]
 
+# What separates the three protocols, in one place (Maryam, 2026-08-25):
+#   banish_multiplier   reward(+multiplier) + banish/unbanish -> SHADOW REALM, the animal CAN move
+#   timeout_multiplier  reward(+multiplier) + timeout         -> FROZEN, the animal CANNOT move
+#   timeout_double      reward + double_reward + timeout, NO multiplier  (the old JPAS_0231 task)
+# The first two differ ONLY in what the punishment does; both carry the streak multiplier. The name
+# `reward_timeout` used earlier hid that, which is why it was wrong.
+TASK_DESCRIPTION = {
+    'banish_multiplier': 'reward (+multiplier) + banish/unbanish; punished into the shadow realm, can move',
+    'timeout_multiplier': 'reward (+multiplier) + timeout; punished by a freeze, cannot move',
+    'timeout_double': 'reward + double reward + timeout; NO multiplier (old JPAS_0231 task)',
+    'reward_only': 'reward only, no punishment',
+}
+
 # retained for callers that still read them; derived from the effect-level sets above
 POSITIVE = {'timeout_double': POSITIVE_EFFECTS, 'banish_multiplier': {'single_reward'},
-            'reward_timeout': {'single_reward'}, 'reward_only': {'single_reward'}}
+            'timeout_multiplier': {'single_reward'}, 'reward_only': {'single_reward'}}
 NEGATIVE = {'timeout_double': {'timeout'}, 'banish_multiplier': {'banish'},
-            'reward_timeout': {'timeout'}, 'reward_only': set()}
-DROPS = {'timeout_double': FIXED_DROPS, 'reward_timeout': FIXED_DROPS, 'reward_only': FIXED_DROPS}
+            'timeout_multiplier': {'timeout'}, 'reward_only': set()}
+DROPS = {'timeout_double': FIXED_DROPS, 'timeout_multiplier': FIXED_DROPS,
+         'reward_only': FIXED_DROPS}
 
 # known per-session view scales (see common/viewport.py). NOT a default for new animals.
 VIEW_SCALE_BY_MOUSE = {'JPAS_0231': 0.56, 'JPAS_0168': 0.35}
@@ -206,7 +220,16 @@ def protocol_switch(log, min_batches=3, max_lead_batches=1):
     return rest[0]['t0'], segs
 
 
-def classify_task(effects):
+def log_has_multiplier(log):
+    """Does this session carry the reward STREAK MULTIPLIER?
+
+    The distinguishing fact between the two timeout protocols: the current task pays a multiplier,
+    the old JPAS_0231 one paid a fixed 1 or 2 and never logged the field.
+    """
+    return any(c.get('multiplier') is not None for c in (log.get('collected') or []))
+
+
+def classify_task(effects, has_multiplier=None):
     """Name the protocol from the effects the session OFFERED.
 
     Matching requires ALL of a rule's effects and NONE of its forbidden ones, in precedence
@@ -216,6 +239,11 @@ def classify_task(effects):
     timeout_double. Both misreadings were seen in JPAS_0168's real directory.
     """
     eff = set(effects)
+    # `double_reward` already separates timeout_double from timeout_multiplier, but the multiplier
+    # is the more direct evidence and is used when the caller supplies it: a timeout session that
+    # logs a multiplier is the CURRENT task whatever else it contains.
+    if has_multiplier is True and 'timeout' in eff and not (eff & {'banish', 'unbanish'}):
+        return 'timeout_multiplier'
     for r in TASK_RULES:
         if (r['all'] <= eff
                 and (not r['any'] or (r['any'] & eff))
@@ -278,7 +306,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
         log = dict(log, collected=collected,
                    spawns=[b for b in (log.get('spawns') or [])
                            if b.get('time', 0) >= switch_ms])
-    task = classify_task(log_effects(log))
+    task = classify_task(log_effects(log), has_multiplier=log_has_multiplier(log))
     if task == 'unknown':
         raise ValueError(f'{log_path}: cannot classify task from effects '
                          f'{sorted({c.get("effect") for c in collected})}')

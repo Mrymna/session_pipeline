@@ -50,9 +50,21 @@ def _spawn_batches(log):
     return sorted(batches.items())
 
 
-def build(session_dir, write=True, verbose=True):
+def build(session_dir, write=True, verbose=True, sess=None):
+    """Build the log-only clean trial table for one session.
+
+    `sess` (optional) injects the handful of session.json fields this builder uses --
+    `world_width`, `world_height`, `mouse_id`, and optionally `camera_moved` -- instead of reading
+    the file. That is what lets the performance folder run this on a RAW SERVER session folder,
+    which has a log.json but no session.json because the video pipeline was never run on it.
+    Everything in this builder is already log-only; session.json was merely where those three
+    numbers happened to live, and all three are recoverable from the log itself.
+
+    Passing nothing keeps the original behaviour exactly.
+    """
     d = Path(session_dir).resolve()
-    sess = json.load(open(d / 'session.json'))
+    if sess is None:
+        sess = json.load(open(d / 'session.json'))
     log = json.load(open(d / 'log.json'))
     W, H = sess['world_width'], sess['world_height']
 
