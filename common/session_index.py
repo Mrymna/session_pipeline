@@ -74,17 +74,47 @@ KNOWN_VIEW_SCALE_BY_WORLD = {
 }
 
 
+def _world_sig_of(w):
+    tex = str(w.get('world_texture_file', '')).split('/')[-1]
+    return f"{int(w.get('width', 0))}x{int(w.get('height', 0))}/icon{int(w.get('icon_w', 0))}/{tex}"
+
+
+def world_signatures(L):
+    """Every DISTINCT world signature in a log.
+
+    `log['worlds']` is a LIST and can hold more than one entry -- JPAS_0168 has two. In every
+    session seen so far the entries are identical (the banishment task's swap between the normal
+    world and the shadow realm is NOT recorded here; both entries name the same red texture), so
+    taking the first is correct today. But it is only correct BECAUSE they agree, and a session
+    where they did not would be silently mis-labelled -- and the signature decides the view_scale,
+    hence every visibility-gated number. So the entries are compared rather than assumed.
+
+    NOTE this reads only the world's SIZE, ICON WIDTH and TEXTURE FILENAME from the log. The
+    texture image itself is never opened anywhere in this pipeline; the filename is part of the
+    world's identity, not a pointer to pixels that get loaded.
+    """
+    ws = L.get('worlds') or [{}]
+    if not isinstance(ws, list):
+        ws = [ws]
+    out = []
+    for w in ws:
+        try:
+            sig = _world_sig_of(w)
+        except Exception:
+            sig = ''
+        if sig not in out:
+            out.append(sig)
+    return out
+
+
 def world_signature(L):
     """A stable id for the world a log was recorded on: 'WxH/iconN/texture.png'.
 
-    Everything in it comes from the log. Sessions sharing a signature share a view_scale.
+    The FIRST distinct signature. Use `world_signatures()` to see them all; `discover` warns when
+    a log carries more than one.
     """
-    try:
-        w = (L.get('worlds') or [{}])[0]
-        tex = str(w.get('world_texture_file', '')).split('/')[-1]
-        return f"{int(w.get('width', 0))}x{int(w.get('height', 0))}/icon{int(w.get('icon_w', 0))}/{tex}"
-    except Exception:
-        return ''
+    sigs = world_signatures(L)
+    return sigs[0] if sigs else ''
 
 
 def _read_view_scale(d, log_mouse, overrides, wsig=''):
@@ -169,7 +199,8 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
             bar.set_postfix_str(re.sub(r'_\\d{2};\\d{2};\\d{2}$', '', d.name)[:32])
         rec = dict(dir=str(d), name=d.name, log=str(d / 'log.json'),
                    mouse=None, mouse_raw=None, mouse_src='', datetime=pd.NaT, task='unreadable',
-                   view_scale=None, vs_src='', n_collected=0, world='', effects='',
+                   view_scale=None, vs_src='', n_collected=0, world='', n_worlds_in_log=0,
+                   effects='',
                    effects_offered='', never_collected='',
                    has_banish=False, has_multiplier=False, max_multiplier=0,
                    use=False, note='', warn='')
@@ -209,7 +240,9 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         rec['has_banish'] = 'banish' in effects
         rec['has_multiplier'] = bool(mults) or ('multiplier' in L)
         rec['max_multiplier'] = int(max(mults)) if mults else 0
-        rec['world'] = world_signature(L)
+        _sigs = world_signatures(L)
+        rec['world'] = _sigs[0] if _sigs else ''
+        rec['n_worlds_in_log'] = len(_sigs)
 
         vs, src = _read_view_scale(d, rec['mouse'], view_scales, rec['world'])
         rec['view_scale'], rec['vs_src'] = vs, src
@@ -248,6 +281,10 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         if not m_log:
             warns.append(f'log ID {ed.get("ID")!r} carries no animal number -- '
                          f'took {rec["mouse"]} from the folder name')
+        # the signature decides the view_scale, so an ambiguous one must not pass quietly
+        if len(_sigs) > 1:
+            warns.append(f'log lists {len(_sigs)} DIFFERENT worlds {_sigs}; using the first -- '
+                         f'check which one the viewport should follow')
         rec['warn'] = '; '.join(warns)
         rec['note'] = '; '.join(notes)
         rec['use'] = not notes
