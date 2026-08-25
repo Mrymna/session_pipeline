@@ -83,11 +83,25 @@ TASK_RULES = [
 # The first two differ ONLY in what the punishment does; both carry the streak multiplier. The name
 # `reward_timeout` used earlier hid that, which is why it was wrong.
 TASK_DESCRIPTION = {
-    'banish_multiplier': 'reward (+multiplier) + banish/unbanish; punished into the shadow realm, can move',
-    'timeout_multiplier': 'reward (+multiplier) + timeout; punished by a freeze, cannot move',
-    'timeout_double': 'reward + double reward + timeout; NO multiplier (old JPAS_0231 task)',
+    'banish_multiplier':
+        'CURRENT. reward (+multiplier) + banish/unbanish; punished into the shadow realm, CAN move',
+    'timeout_multiplier':
+        'CURRENT. reward (+multiplier) + timeout; punished by a freeze, CANNOT move',
+    'timeout_double':
+        'OLD (JPAS_0231 only). COMBO (double reward) + timeout, NO multiplier. '
+        'A DIFFERENT EXPERIMENT from timeout_multiplier -- never pool the two',
     'reward_only': 'reward only, no punishment',
 }
+
+# Protocols that must not be pooled into one analysis. `timeout_double` and `timeout_multiplier`
+# both contain a timeout and are one word apart, which makes them exactly the pair most likely to
+# be combined by accident -- but 0231's task pays a COMBO (a double-reward icon) and carries no
+# multiplier, so its trials, its reward units and its chance baseline all mean something different.
+# The two CURRENT tasks differ only in the punishment (shadow realm vs freeze) and are likewise
+# separate experiments.
+NEVER_POOL = "each protocol is a different experiment: different icons, different reward units, " \
+             "different chance baseline"
+
 
 # retained for callers that still read them; derived from the effect-level sets above
 POSITIVE = {'timeout_double': POSITIVE_EFFECTS, 'banish_multiplier': {'single_reward'},

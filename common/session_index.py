@@ -68,6 +68,14 @@ def normalise_mouse(raw):
 # texture file) even though it does not record the scale itself. Keying the known values on that
 # signature means a scale is stated ONCE per world and then applies automatically to every session
 # that uses it -- and a session on a NEW world is flagged instead of silently inheriting.
+# The log records NO world number, so `W1..Wn` below are invented labels, numbered by first
+# appearance. Put the lab's own names here -- keyed either on the full `world_key`
+# ('<signature>  ||  <config>') or on the signature alone -- and they replace the invented ones
+# everywhere. Fill this in and "W4" means what you mean by W4.
+WORLD_NAMES = {
+    # '2400x2400/icon500/worldLowContrastLowSaturationRed.png': 'W4',
+}
+
 KNOWN_VIEW_SCALE_BY_WORLD = {
     '2400x2400/icon500/worldLowContrastLowSaturationRed.png': 0.35,   # JPAS_0168 (confirmed)
     '2000x2000/icon450/worldLowContrastLowSaturationRed.png': 0.56,   # JPAS_0231 (game code)
@@ -77,6 +85,41 @@ KNOWN_VIEW_SCALE_BY_WORLD = {
 def _world_sig_of(w):
     tex = str(w.get('world_texture_file', '')).split('/')[-1]
     return f"{int(w.get('width', 0))}x{int(w.get('height', 0))}/icon{int(w.get('icon_w', 0))}/{tex}"
+
+
+def world_config(L, i=0):
+    """What the world CONTAINS, from the log: its icon set and how many of each are active.
+
+    *** THE LOG HAS NO WORLD NUMBER. ***
+    Nothing in `log['worlds'][i]` is an id or a name -- there is only the texture file, the size,
+    the icon size, the spawn locations and the effect definitions. So `W1..Wn` in the census are
+    labels THIS CODE invents, numbered by first appearance, and they need not match the numbering
+    used in the lab.
+
+    They also used to be too COARSE. The signature is size + icon width + texture, which is what
+    fixes the viewport (and therefore the view_scale) -- but two genuinely different worlds can
+    share all three and differ only in which icons they define. A timeout world and a banishment
+    world of the same size on the same background collapsed into one entry, which is why a single
+    "world" appeared to host two protocols.
+
+    This returns the icon configuration so the two can be told apart. `world_id` is numbered on
+    the PAIR (signature, config), so such worlds now get separate numbers.
+    """
+    ws = L.get('worlds') or [{}]
+    if not isinstance(ws, list):
+        ws = [ws]
+    if i >= len(ws):
+        return ''
+    w = ws[i] or {}
+    eff = sorted({e.get('effect') for e in (w.get('effects') or []) if e.get('effect')})
+    alt = sorted({e.get('effect') for e in (w.get('alt_effects') or []) if e.get('effect')})
+    parts = ['+'.join(eff) or '-']
+    if alt:
+        parts.append('alt:' + '+'.join(alt))
+    if w.get('active_benefits') is not None:
+        parts.append(f"{w.get('active_benefits')}good/{w.get('active_detriments')}bad")
+    parts.append(f"{len(w.get('spawn_locations') or [])}loc")
+    return ' '.join(parts)
 
 
 def world_signatures(L):
@@ -199,8 +242,8 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
             bar.set_postfix_str(re.sub(r'_\\d{2};\\d{2};\\d{2}$', '', d.name)[:32])
         rec = dict(dir=str(d), name=d.name, log=str(d / 'log.json'),
                    mouse=None, mouse_raw=None, mouse_src='', datetime=pd.NaT, task='unreadable',
-                   view_scale=None, vs_src='', n_collected=0, world='', n_worlds_in_log=0,
-                   effects='',
+                   view_scale=None, vs_src='', n_collected=0, world='', world_cfg='',
+                   n_worlds_in_log=0, effects='',
                    effects_offered='', never_collected='',
                    has_banish=False, has_multiplier=False, max_multiplier=0,
                    use=False, note='', warn='')
@@ -242,6 +285,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         rec['max_multiplier'] = int(max(mults)) if mults else 0
         _sigs = world_signatures(L)
         rec['world'] = _sigs[0] if _sigs else ''
+        rec['world_cfg'] = world_config(L)
         rec['n_worlds_in_log'] = len(_sigs)
 
         vs, src = _read_view_scale(d, rec['mouse'], view_scales, rec['world'])
@@ -680,6 +724,13 @@ def blocks_of(R, size=None):
 
     Returns a DataFrame with one row per block: pooled conflict and control rates + Wilson intervals.
     """
+    # POOLING ACROSS PROTOCOLS IS A MISTAKE, and a silent one: the block would average a combo
+    # task against a multiplier task, whose reward units and chance baselines are not the same
+    # quantity. It is refused rather than warned about, because the output looks perfectly normal.
+    if 'task' in R.columns and R.task.nunique() > 1:
+        raise ValueError(
+            f'these sessions span {R.task.nunique()} protocols ({sorted(R.task.unique())}) -- '
+            f'{pfl.NEVER_POOL}. Select one first, e.g. R[R.task == "{sorted(R.task.unique())[0]}"].')
     rows = []
     size = len(R) if size is None else size
     size = max(1, int(size))
@@ -715,19 +766,32 @@ def protocol_census(S):
     if not len(S):
         print('no sessions'); return S
 
+    # Number on the PAIR (signature, icon config): two worlds of the same size on the same texture
+    # but with different icon sets are different worlds, and merging them made one entry appear to
+    # host two protocols.
+    if 'world_cfg' not in S.columns:
+        S['world_cfg'] = ''
+    S['world_key'] = S.world.fillna('') + '  ||  ' + S.world_cfg.fillna('')
     order = (S.dropna(subset=['datetime']).sort_values('datetime')
-             .drop_duplicates('world').world.tolist())
-    order += [w for w in S.world.unique() if w not in order]
+             .drop_duplicates('world_key').world_key.tolist())
+    order += [w for w in S.world_key.unique() if w not in order]
     wid = {w: f'W{i + 1}' for i, w in enumerate(order)}
-    S['world_id'] = S.world.map(wid)
+    # WORLD_NAMES lets the lab's own numbering replace these invented labels -- see the dict.
+    wid.update({k: v for k, v in WORLD_NAMES.items() if k in wid})
+    S['world_id'] = S.world_key.map(
+        lambda k: WORLD_NAMES.get(k, WORLD_NAMES.get(k.split('  ||  ')[0], wid.get(k))))
 
-    print('WORLDS in this directory (numbered by first appearance):')
+    print('WORLDS in this directory (numbered by first appearance).')
+    print('  NOTE the log records no world number -- these labels are invented here. Put the lab\'s')
+    print('  own names in session_index.WORLD_NAMES to replace them.')
     for w in order:
-        g = S[S.world == w]
+        g = S[S.world_key == w]          # the PAIR, not the signature alone
         vs = g.view_scale.dropna().unique()
         vs_s = f'{vs[0]}' if len(vs) == 1 else ('NONE -- must be supplied' if not len(vs)
                                                 else f'CONFLICTING {list(vs)}')
-        print(f'  {wid[w]}  {w}')
+        sig, _, cfg = w.partition('  ||  ')
+        print(f'  {(g.world_id.iloc[0] if len(g) else wid[w])}  {sig}')
+        print(f'       icons: {cfg}')
         print(f'       {len(g):>3} session(s)   {g.day.min()} .. {g.day.max()}   '
               f'view_scale {vs_s}')
 
