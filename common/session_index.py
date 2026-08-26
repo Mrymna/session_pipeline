@@ -647,7 +647,7 @@ def world_protocol_audit(S, verbose=True):
     the spawn-batch count), so a genuine mis-read is told apart from a real earlier-stage session.
     """
     if 'world_id' not in S.columns:
-        protocol_census(S)
+        task_protocol(S, verbose=False)
     rows = []
     for sig, g in S.groupby('world'):
         tasks = g.task.value_counts()
@@ -786,8 +786,8 @@ def blocks_of(R, size=None):
     return pd.DataFrame(rows)
 
 
-def protocol_census(S):
-    """STEP 2b -- WHICH WORLDS and WHICH PROTOCOLS are in this animal's directory?
+def task_protocol(S, verbose=True):
+    """STEP 2b -- WHICH TASKS (and, secondarily, worlds) are in this animal's directory?
 
     Answers "what is actually here?" BEFORE anything is chosen to analyse. Worlds are numbered
     W1, W2, ... to follow the TRAINING CURRICULUM -- by TASK first (`TASK_STAGE_RANK`), then by
@@ -800,7 +800,9 @@ def protocol_census(S):
     Returns the census DataFrame; also adds a `world_id` column to S in place.
     """
     if not len(S):
-        print('no sessions'); return S
+        if verbose:
+            print('no sessions')
+        return S
 
     # world_key = (TASK, physical signature). The task is the board-classified stage; keying on it
     # means the number follows the task, not the image. Two tasks on one texture -> two keys (they
@@ -822,43 +824,37 @@ def protocol_census(S):
     S['world_id'] = S.world_key.map(
         lambda k: WORLD_NAMES.get(k, WORLD_NAMES.get(k.split('  ||  ')[-1], wid.get(k))))
 
-    print('WORLDS in this directory (numbered by TASK stage, then size).')
-    print('  NOTE the log records no world number -- these labels are invented here. Put the lab\'s')
-    print('  own names in session_index.WORLD_NAMES to replace them.')
-    for w in order:
-        g = S[S.world_key == w]
-        task, _, sig = w.partition('  ||  ')
-        cfg = g.world_cfg.dropna().iloc[0] if g.world_cfg.notna().any() else ''
-        vs = g.view_scale.dropna().unique()
-        vs_s = f'{vs[0]}' if len(vs) == 1 else ('NONE -- must be supplied' if not len(vs)
-                                                else f'CONFLICTING {list(vs)}')
-        print(f'  {(g.world_id.iloc[0] if len(g) else wid[w])}  {task:<20} {sig}')
-        print(f'       icons: {cfg}')
-        print(f'       {len(g):>3} session(s)   {g.day.min()} .. {g.day.max()}   '
-              f'view_scale {vs_s}')
+    if verbose:
+        print('WORLDS in this directory (numbered by TASK stage, then size).')
+        print('  NOTE the log records no world number -- these labels are invented here. Put the')
+        print('  lab\'s own names in session_index.WORLD_NAMES to replace them.')
+        for w in order:
+            g = S[S.world_key == w]
+            task, _, sig = w.partition('  ||  ')
+            cfg = g.world_cfg.dropna().iloc[0] if g.world_cfg.notna().any() else ''
+            vs = g.view_scale.dropna().unique()
+            vs_s = f'{vs[0]}' if len(vs) == 1 else ('NONE -- must be supplied' if not len(vs)
+                                                    else f'CONFLICTING {list(vs)}')
+            print(f'  {(g.world_id.iloc[0] if len(g) else wid[w])}  {task:<20} {sig}')
+            print(f'       icons: {cfg}')
+            print(f'       {len(g):>3} session(s)   {g.day.min()} .. {g.day.max()}   '
+                  f'view_scale {vs_s}')
 
-    print('\nPROTOCOLS in this directory:')
-    for task, g in S.groupby('task'):
-        print(f'  {task:<20} {len(g):>3} session(s)   {g.day.min()} .. {g.day.max()}')
-        print(f'  {"":<20}     effects: {" | ".join(sorted(g.effects.unique()))}')
+        print('\nPROTOCOLS in this directory:')
+        for task, g in S.groupby('task'):
+            print(f'  {task:<20} {len(g):>3} session(s)   {g.day.min()} .. {g.day.max()}')
+            print(f'  {"":<20}     effects: {" | ".join(sorted(g.effects.unique()))}')
 
-    print('\nWORLD x PROTOCOL  (session counts):')
-    ct = S.pivot_table(index='world_id', columns='task', values='name', aggfunc='count',
-                       fill_value=0)
-    print(ct.to_string())
-
-    # SHOW sessions whose first 10 trials are NOT a stable single task (Maryam): the task label is
-    # only a settled guess for these, so they are surfaced for a look rather than trusted silently.
-    if 'task_stable' in S.columns:
-        uns = S[~S.task_stable.fillna(False)]
-        print(f'\nFIRST-10-TRIALS STABILITY: {len(S) - len(uns)}/{len(S)} sessions stable.')
-        if len(uns):
-            print(f'  {len(uns)} session(s) NOT stable in the first 10 trials -- inspect these:')
-            for _, r in uns.iterrows():
-                extra = '' if r.get('task_union', '') in ('', r.task) else \
-                    f"   whole-log union says {r.get('task_union')}"
-                print(f"    {r['name']:<30} settled={r.task:<18} "
-                      f"trials: {r.get('task_seq', '')}{extra}")
+        # sessions with no clear task majority in the first 10 trials -- surfaced for a look
+        if 'task_stable' in S.columns:
+            uns = S[~S.task_stable.fillna(False)]
+            print(f'\nFIRST-10-TRIALS: {len(S) - len(uns)}/{len(S)} sessions have a clear task '
+                  f'majority.')
+            if len(uns):
+                print(f'  {len(uns)} session(s) with no clear majority -- inspect these:')
+                for _, r in uns.iterrows():
+                    print(f"    {r['name']:<30} task={r.task:<18} "
+                          f"trials: {r.get('task_seq', '')}")
 
     rows = []
     for (w, task), g in S.groupby(['world_id', 'task']):
@@ -868,3 +864,7 @@ def protocol_census(S):
                                      if g.view_scale.notna().any() else None),
                          usable=int(g.use.sum())))
     return pd.DataFrame(rows).sort_values(['task', 'first']).reset_index(drop=True)
+
+
+# old name kept so existing callers/scripts do not break
+protocol_census = task_protocol

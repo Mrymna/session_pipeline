@@ -208,47 +208,64 @@ def board_segments(log, min_batches=3):
                  task=classify_task(r[2])) for r in out]
 
 
-def first_trials_task(log, n=10):
-    """Classify the session's task from its FIRST n trials, and say whether it is STABLE.
-
-    Maryam (2026-08-26): to decide banishment vs timeout, look at the first ~10 trials rather than
-    the whole-log union of effects. The union folds a trial-0 lead-in (a session that opens under
-    the old task and switches) into the label, and it cannot tell a clean session from one whose
-    board keeps changing. Reading the task PER TRIAL from each spawn batch's board does both.
-
-    A trial = one spawn batch; its task is classified from that batch's `current` icon set. A single
-    differing FIRST trial is allowed -- that is the documented trial-0 timeout->banishment switch.
-    Anything less consistent than that returns stable=False, so the caller can SHOW the session
-    instead of silently labelling it.
-
-    Returns dict(task, stable, seq, n_lead):
-      task    the settled task over the first n trials (after any single trial-0 lead-in)
-      stable  True iff the trials after the lead-in are all that one task, and the lead-in is <=1
-      seq     the per-trial task for the first n batches -- print this to inspect an unstable session
-      n_lead  how many leading trials differ from the settled task (0, or 1 for a clean switch)
-    """
-    sp = sorted(log.get('spawns') or [], key=lambda x: x.get('time', 0))
+def _first_batches(log, n=None):
+    """The first n spawn batches as sorted (t_ms, effect_set) -- one per unique spawn timestamp,
+    keeping the fullest `current` board logged at that timestamp. n=None returns all."""
     batches = {}
-    for b in sp:
+    for b in sorted(log.get('spawns') or [], key=lambda x: x.get('time', 0)):
         t = b.get('time')
         if t is None:
             continue
         eff = {i.get('effect') for i in (b.get('current') or []) if i.get('effect')}
         if not eff and b.get('effect'):
             eff = {b['effect']}
-        if t not in batches or len(eff) > len(batches[t]):   # keep the fullest board at a timestamp
+        if t not in batches or len(eff) > len(batches[t]):
             batches[t] = eff
-    seq = [classify_task(eff) for _, eff in sorted(batches.items())[:n]]
+    items = sorted(batches.items())
+    return items[:n] if n is not None else items
+
+
+def first_trials_task(log, n=10):
+    """Classify the session's task from its FIRST n trials by MAJORITY, and flag ties.
+
+    Maryam (2026-08-26): to decide banishment vs timeout, read the task from each of the first ~10
+    trials' boards, not from the whole-log union of effects (which folds a trial-0 lead-in into the
+    label). A trial = one spawn batch; its task is classified from that batch's `current` icon set,
+    i.e. the icons actually on the board -- the same thing visible in the video at that time.
+
+    THE RULE: the task is the protocol that is the MAJORITY of the first n trials. A session can open
+    under the old task and switch once (timeout -> banishment), and that switch can take a couple of
+    trials to show on the board -- so a session with e.g. 2 timeout then 8 banishment is banishment
+    (8 of 10). `stable` is True when that majority is STRICT (more than half); it is False only when
+    no protocol has a clear majority (an even split / oscillation), which is what warrants a look.
+    `seq`, `times` and `counts` come back so a flagged session can be lined up against the video (see
+    `show_first_trials`).
+
+    Returns dict(task, stable, seq, times, counts, n_switch).
+    """
+    items = _first_batches(log, n)
+    seq = [classify_task(eff) for _, eff in items]
+    times = [t for t, _ in items]
     if not seq:
-        return dict(task='unknown', stable=False, seq=[], n_lead=0)
-    # the settled task = the most common one AFTER a possible single-trial lead-in
-    body = seq[1:] if len(seq) > 1 and seq[0] != seq[1] else seq
-    settled = max(set(body), key=body.count)
-    n_lead = 0
-    while n_lead < len(seq) and seq[n_lead] != settled:
-        n_lead += 1
-    stable = n_lead <= 1 and all(t == settled for t in seq[n_lead:])
-    return dict(task=settled, stable=bool(stable), seq=seq, n_lead=n_lead)
+        return dict(task='unknown', stable=False, seq=[], times=[], counts={}, n_switch=0)
+    counts = {t: seq.count(t) for t in set(seq)}
+    task = max(counts, key=counts.get)                 # the majority protocol of the first n trials
+    stable = counts[task] > len(seq) / 2               # a STRICT majority (more than half)
+    n_switch = sum(1 for i in range(1, len(seq)) if seq[i] != seq[i - 1])
+    return dict(task=task, stable=bool(stable), seq=seq, times=times, counts=counts,
+                n_switch=n_switch)
+
+
+def show_first_trials(log_path, n=12):
+    """Print the first n spawn batches -- time, on-board effects, classified task -- so a session's
+    task can be lined up against the video. `log_path` is a path or an already-loaded log dict."""
+    log = log_path if isinstance(log_path, dict) else json.load(open(log_path))
+    items = _first_batches(log, n)
+    print(f'first {len(items)} spawn batches  (board on screen -> task):')
+    for i, (t, eff) in enumerate(items):
+        print(f'  trial {i:2d}   t={t/1000:8.2f}s   {str(sorted(eff)):<48} -> {classify_task(eff)}')
+    ft = first_trials_task(log, n=max(n, 10))
+    print(f'\n  => task = {ft["task"]}   clean = {ft["stable"]}   board changes = {ft["n_switch"]}')
 
 
 def protocol_switch(log, min_batches=3, max_lead_batches=1):

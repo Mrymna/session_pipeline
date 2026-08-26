@@ -257,7 +257,9 @@ def build_all(main_dir, pattern='*', progress=True, verbose=True, one_per_day=Tr
             Si = sidx.one_per_day(Si, keep='last', verbose=verbose, mark_only=True)
         frames.append(Si)
     S = pd.concat(frames, ignore_index=True)
-    sidx.protocol_census(S)          # assigns world_id in place
+    # assigns world_id in place; silent because the world numbering is not this notebook's focus
+    # (the task is). Call sidx.task_protocol(S) directly if you want the world listing.
+    sidx.task_protocol(S, verbose=False)
     return build(S, progress=progress, verbose=verbose)
 
 
@@ -267,8 +269,7 @@ def report(X, T, failed=()):
         print('  nothing built'); return
     print(f'  {len(X)} session(s), {len(T)} trial(s), {X.mouse.nunique()} animal(s)')
     print(f'  days      : {X.day.min()} .. {X.day.max()}')
-    print(f'  protocols : {X.task.value_counts().to_dict()}')
-    print(f'  worlds    : {X.world_id.value_counts().to_dict()}')
+    print(f'  tasks     : {X.task.value_counts().to_dict()}')
     if 'builder' in T:
         print(f'  builders  : {T.builder.value_counts().to_dict()}')
     if 'outcome' in T:
