@@ -49,7 +49,8 @@ BUILD_VERSION = 2
 # NOTE `world_sig`, not `world`. The trial table already has a `world` column meaning which world
 # that TRIAL happened in ('NORMAL' / 'BANISH_WORLD') -- a different thing from the world the SESSION
 # was recorded on, and the authority for it, since the log does not record the world swap.
-ID_COLS = ['session', 'mouse', 'day', 'time', 'task', 'world_sig', 'world_id', 'view_scale', 'dir']
+ID_COLS = ['session', 'mouse', 'day', 'time', 'task', 'task_stable', 'task_seq',
+           'world_sig', 'world_id', 'view_scale', 'dir']
 _ID_SOURCE = {'world_sig': 'world'}     # identity column -> the discover-table column it comes from
 
 VALENCE = {'single_reward': +1, 'double_reward': +1, 'timeout': -1, 'banish': -1, 'unbanish': 0}

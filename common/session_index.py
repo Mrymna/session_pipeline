@@ -11,22 +11,26 @@ That made it easy to put two DIFFERENT ANIMALS on DIFFERENT PROTOCOLS into one l
 which is meaningless, because D is a within-animal measure and the protocol decides what "positive"
 even means. Discovery removes the hand-editing and adds the guards.
 
-THREE THINGS THIS REFUSES TO GUESS
-----------------------------------
+TWO THINGS THIS REFUSES TO GUESS
+--------------------------------
 1. THE ANIMAL. `experiment_data.ID` is written inconsistently by the rig (`'mice 168'`,
    `'JPASS_0231'`), so it is normalised to the digits (168, 231). `discover()` reports every
    distinct animal it found and `require_single_animal()` raises if a set spans more than one.
-2. THE TASK. Taken from the collection effects actually present in the log (`classify_task`),
-   never from the folder name -- a folder can be named anything.
-3. THE VIEW SCALE. It is a property of the WORLD, is not in the log, and differs per session, so a
-   silent default would re-score the animal against another world's zoom and every visibility-gated
-   number would be wrong with nothing looking broken. Resolution order is
-   `session.json` -> explicit `view_scales=` override -> the known-values table -> **give up and
-   mark the session unscorable**. It is never invented.
+2. THE TASK. Decided from the FIRST 10 TRIALS' boards (`pfl.first_trials_task`) -- stable across
+   them means that task; a single trial-0 lead-in is allowed (the timeout->banishment switch);
+   anything less consistent is flagged `task_stable=False` and shown, not trusted. Never the folder
+   name. The whole-log union is kept as `task_union` for comparison.
 
-A session that cannot be scored is kept in the table with `use=False` and a `note` saying why --
-it is never dropped silently, because a session vanishing from a learning curve is exactly the kind
-of thing nobody notices.
+THE VIEW SCALE is 0.35 for all animals and all worlds in the current setup -- only the world SIZE
+changes across the curriculum, not the zoom -- so it DEFAULTS to `DEFAULT_VIEW_SCALE` (0.35).
+Resolution order is `session.json` -> explicit `view_scales=` override -> `KNOWN_VIEW_SCALE_BY_WORLD`
+(per-world exceptions, e.g. JPAS_0231's old 0.56) -> the 0.35 default. A session that fell back to
+the default carries `vs_src='default'`, so if a future world ever uses a different zoom the fallback
+is visible and auditable rather than silently wrong.
+
+A session that still cannot be scored (e.g. an unreadable log) is kept in the table with `use=False`
+and a `note` saying why -- it is never dropped silently, because a session vanishing from a learning
+curve is exactly the kind of thing nobody notices.
 """
 from pathlib import Path
 import json
@@ -68,23 +72,48 @@ def normalise_mouse(raw):
 # texture file) even though it does not record the scale itself. Keying the known values on that
 # signature means a scale is stated ONCE per world and then applies automatically to every session
 # that uses it -- and a session on a NEW world is flagged instead of silently inheriting.
-# The log records NO world number, so `W1..Wn` below are invented labels, numbered by first
-# appearance. Put the lab's own names here -- keyed either on the full `world_key`
-# ('<signature>  ||  <config>') or on the signature alone -- and they replace the invented ones
-# everywhere. Fill this in and "W4" means what you mean by W4.
+# The log records NO world number, so `W1..Wn` below are invented labels. They are numbered to
+# follow the TRAINING CURRICULUM -- by TASK first (the stage rank below), then by world SIZE within
+# a task -- NOT by the order a texture first appeared (Maryam, 2026-08-26). So reward_only worlds
+# come first (W1 = smallest), then the timeout world, then banishment last. Put the lab's own names
+# here -- keyed on the full `world_key` ('<task>  ||  <signature>') or on the signature alone -- and
+# they replace the invented ones everywhere. Fill this in and "W4" means what you mean by W4.
 WORLD_NAMES = {
     # '2400x2400/icon500/worldLowContrastLowSaturationRed.png': 'W4',
 }
 
+# The training stages, in order. The world NUMBER follows this (then size), because the same texture
+# is reused across tasks -- so numbering by the image put one physical world under several protocols
+# and split one task across several numbers. The task is the reliable, board-classified axis.
+TASK_STAGE_RANK = {'reward_only': 0, 'timeout_multiplier': 1, 'banish_multiplier': 2}
+_OTHER_STAGE = 90     # timeout_double (the OLD 0231 experiment) and any unknown task sort last
+
+# The view scale is 0.35 for all animals / all worlds in the current setup (Maryam, 2026-08-26); the
+# world SIZE changes across the curriculum, the zoom does not. So this is the DEFAULT, used when no
+# more specific source applies -- change it here in one place. It is the LAST resort: session.json, a
+# view_scales= override, and KNOWN_VIEW_SCALE_BY_WORLD all take precedence, so a genuine exception can
+# still be pinned per world.
+DEFAULT_VIEW_SCALE = 0.35
+
+# per-world exceptions to the default. JPAS_0231's 2000x2000 world was 0.56 in the old rig (game
+# code); it stays correct here. Add a row only for a world whose zoom is NOT the 0.35 default.
 KNOWN_VIEW_SCALE_BY_WORLD = {
-    '2400x2400/icon500/worldLowContrastLowSaturationRed.png': 0.35,   # JPAS_0168 (confirmed)
-    '2000x2000/icon450/worldLowContrastLowSaturationRed.png': 0.56,   # JPAS_0231 (game code)
+    '2000x2000/icon450/worldLowContrastLowSaturationRed.png': 0.56,   # JPAS_0231 (old rig, game code)
 }
 
 
 def _world_sig_of(w):
     tex = str(w.get('world_texture_file', '')).split('/')[-1]
     return f"{int(w.get('width', 0))}x{int(w.get('height', 0))}/icon{int(w.get('icon_w', 0))}/{tex}"
+
+
+def _world_size(sig):
+    """(width, height) parsed from a 'WxH/iconN/texture' signature; (0, 0) if unparseable."""
+    try:
+        w, h = sig.split('/', 1)[0].lower().split('x')
+        return int(w), int(h)
+    except Exception:
+        return 0, 0
 
 
 def world_config(L, i=0):
@@ -176,10 +205,13 @@ def _read_view_scale(d, log_mouse, overrides, wsig=''):
             pass
     if wsig in KNOWN_VIEW_SCALE_BY_WORLD:
         return float(KNOWN_VIEW_SCALE_BY_WORLD[wsig]), 'known world'
-    # deliberately NO by-mouse fallback. The scale belongs to the WORLD, so the same animal on a
-    # NEW world would silently inherit the old zoom -- the exact failure this is built to prevent
-    # (caught in testing: a 3000x3000 world quietly took JPAS_0168's 0.35 and looked fine).
-    return None, 'NOT FOUND'
+    # DEFAULT (Maryam, 2026-08-26): the view scale is 0.35 for all animals and all worlds in the
+    # current setup; only the world SIZE changes, not the zoom. So an unlisted world resolves to the
+    # default rather than being marked unscorable. It is returned with vs_src='default' so a session
+    # that fell back to it is still VISIBLE -- if a future world ever uses a different zoom, add it to
+    # KNOWN_VIEW_SCALE_BY_WORLD (which still wins) or pass view_scales=, and change DEFAULT_VIEW_SCALE
+    # in one place. The old 0.56 (JPAS_0231) stays a per-world exception above.
+    return float(DEFAULT_VIEW_SCALE), 'default'
 
 
 def _progress(seq, desc, enabled=True, labels=None):
@@ -245,6 +277,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
                    view_scale=None, vs_src='', n_collected=0, world='', world_cfg='',
                    n_worlds_in_log=0, effects='',
                    effects_offered='', never_collected='',
+                   task_stable=False, task_seq='', task_union='',
                    has_banish=False, has_multiplier=False, max_multiplier=0,
                    use=False, note='', warn='')
         try:
@@ -277,7 +310,15 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         rec['effects'] = '+'.join(effects)
         rec['effects_offered'] = '+'.join(offered)
         rec['never_collected'] = '+'.join(sorted(set(offered) - set(effects)))
-        rec['task'] = pfl.classify_task(set(offered))
+        # TASK from the FIRST 10 TRIALS' boards (Maryam): stable across them -> that task; not
+        # stable -> keep the settled guess but flag task_stable=False so the session is SHOWN, not
+        # trusted. The whole-log union (task_union) is kept alongside as a cross-check -- when it
+        # disagrees with the first-trials task, the union saw a later board the first trials did not.
+        ft = pfl.first_trials_task(L, n=10)
+        rec['task'] = ft['task']
+        rec['task_stable'] = ft['stable']
+        rec['task_seq'] = '>'.join(ft['seq'])
+        rec['task_union'] = pfl.classify_task(set(offered))
         # evidence for the grouping, read from the log rather than assumed from the task name
         mults = [c.get('multiplier') for c in collected if c.get('multiplier') is not None]
         rec['has_banish'] = 'banish' in effects
@@ -593,54 +634,46 @@ def one_per_day(S, keep='last', verbose=True, mark_only=False):
 
 
 def world_protocol_audit(S, verbose=True):
-    """Cross-check the CLASSIFIED protocol against the WORLD, and explain every disagreement.
+    """Cross-check the CLASSIFIED task against the PHYSICAL world, and explain every mismatch.
 
-    Maryam's ground truth is that a world implies a protocol (W4 = banishment, W3 = timeout).
-    That is independent evidence, so where the classifier disagrees with it, one of the two is
-    wrong and it is worth knowing which -- rather than silently accepting a session count that
-    looks too low.
-
-    For each world this prints the majority protocol, then lists every session that departs from
-    it TOGETHER WITH the evidence that decided it: the effects the log actually offered (from the
-    spawn stream), what was collected, and how many spawn batches there were. A session on a
-    banishment world whose log offers no `banish` icon at all is a fact about the log, not a bug
-    in the classifier; a session that offers `banish` and is still not classified as such WOULD
-    be a bug. The printout distinguishes the two.
+    *** Grouped by the physical world (the `world` signature), NOT by `world_id`. ***
+    `world_id` is now the TASK-stage label, so grouping on it would put one task per group and the
+    check would be trivially self-consistent. The useful question is the other way round: does one
+    physical TEXTURE host more than one task? On this rig it does -- the same red texture is reused
+    across the reward / timeout / banishment stages -- so a texture carrying several tasks is
+    EXPECTED (it is the training progression), not a bug. What is worth a human look is a single
+    session whose classified task is the minority on its texture: the printout lists it with the
+    evidence that decided it (the effects the log OFFERED from the spawn board, what was COLLECTED,
+    the spawn-batch count), so a genuine mis-read is told apart from a real earlier-stage session.
     """
     if 'world_id' not in S.columns:
         protocol_census(S)
     rows = []
-    for wid, g in S.groupby('world_id'):
-        maj = g.task.value_counts().idxmax()
+    for sig, g in S.groupby('world'):
+        tasks = g.task.value_counts()
+        maj = tasks.idxmax()
         odd = g[g.task != maj]
         if verbose:
-            print(f'\n{wid}  ({g.world.iloc[0]})')
-            print(f'   {len(g)} session(s)   majority protocol: {maj}   '
-                  f'{g.task.value_counts().to_dict()}')
+            wids = ', '.join(sorted(g.world_id.dropna().unique()))
+            print(f'\nphysical world {sig or "(unknown)"}   -> {wids}')
+            print(f'   {len(g)} session(s)   tasks on this texture: {tasks.to_dict()}')
+            if len(tasks) > 1:
+                print(f'   (one texture, {len(tasks)} tasks -- expected if it spans training stages)')
             if len(odd):
-                print(f'   {len(odd)} session(s) do NOT match the majority:')
+                print(f'   {len(odd)} session(s) are the MINORITY task on this texture:')
                 for _, r in odd.iterrows():
                     off = r.get('effects_offered', '') or '(none)'
-                    print(f"      {r['session']:<26} task={r.task:<18} "
-                          f"offered={off}")
+                    print(f"      {r['session']:<26} task={r.task:<18} offered={off}")
                     print(f"      {'':<26} collected={r.effects or '(none)'}  "
                           f"n_collected={r.n_collected}")
-            else:
-                print('   all sessions agree with the majority')
         for _, r in odd.iterrows():
-            rows.append(dict(world_id=wid, session=r['session'], task=r.task,
-                             majority=maj, effects_offered=r.get('effects_offered', ''),
+            rows.append(dict(world=sig, world_id=r.get('world_id'), session=r['session'],
+                             task=r.task, majority=maj,
+                             effects_offered=r.get('effects_offered', ''),
                              effects=r.effects, n_collected=r.n_collected))
     A = pd.DataFrame(rows)
-    if verbose:
-        if len(A):
-            print(f'\n{len(A)} session(s) disagree with their world in total.')
-            print('  offered includes the protocol effect -> classifier bug, tell Claude.')
-            print('  offered does NOT include it          -> the log really has no such icon;')
-            print('                                          group by WORLD instead:')
-            print("                                          group_report(S, world_id='W4')")
-        else:
-            print('\nevery session agrees with its world.')
+    if verbose and not len(A):
+        print('\nevery texture hosts a single task.')
     return A
 
 
@@ -757,40 +790,49 @@ def protocol_census(S):
     """STEP 2b -- WHICH WORLDS and WHICH PROTOCOLS are in this animal's directory?
 
     Answers "what is actually here?" BEFORE anything is chosen to analyse. Worlds are numbered
-    W1, W2, ... in order of first appearance, so they can be referred to by number; the number is
-    a label for THIS listing, not an id from the log (the log records the world's size, icon width
-    and texture, not an index).
+    W1, W2, ... to follow the TRAINING CURRICULUM -- by TASK first (`TASK_STAGE_RANK`), then by
+    world SIZE within a task -- so reward_only is W1(+W2 if two sizes), the timeout world next, and
+    banishment last. This replaces the old first-appearance-by-texture numbering, which put one
+    reused texture under several protocols (Maryam, 2026-08-26). The number is a LABEL for this
+    listing, not an id from the log; the physical world (the `world` signature) still fixes
+    view_scale, and analysis groups by TASK, never by this number.
 
     Returns the census DataFrame; also adds a `world_id` column to S in place.
     """
     if not len(S):
         print('no sessions'); return S
 
-    # Number on the PAIR (signature, icon config): two worlds of the same size on the same texture
-    # but with different icon sets are different worlds, and merging them made one entry appear to
-    # host two protocols.
+    # world_key = (TASK, physical signature). The task is the board-classified stage; keying on it
+    # means the number follows the task, not the image. Two tasks on one texture -> two keys (they
+    # were wrongly one before); two sizes of one task -> two keys, ordered small->large.
     if 'world_cfg' not in S.columns:
         S['world_cfg'] = ''
-    S['world_key'] = S.world.fillna('') + '  ||  ' + S.world_cfg.fillna('')
-    order = (S.dropna(subset=['datetime']).sort_values('datetime')
-             .drop_duplicates('world_key').world_key.tolist())
-    order += [w for w in S.world_key.unique() if w not in order]
-    wid = {w: f'W{i + 1}' for i, w in enumerate(order)}
-    # WORLD_NAMES lets the lab's own numbering replace these invented labels -- see the dict.
-    wid.update({k: v for k, v in WORLD_NAMES.items() if k in wid})
-    S['world_id'] = S.world_key.map(
-        lambda k: WORLD_NAMES.get(k, WORLD_NAMES.get(k.split('  ||  ')[0], wid.get(k))))
+    if 'task' not in S.columns:
+        S['task'] = 'unknown'
+    S['world_key'] = S.task.fillna('unknown') + '  ||  ' + S.world.fillna('')
 
-    print('WORLDS in this directory (numbered by first appearance).')
+    def _key_sort(k):
+        task, _, sig = k.partition('  ||  ')
+        w, h = _world_size(sig)
+        return (TASK_STAGE_RANK.get(task, _OTHER_STAGE), w, h, sig)
+
+    order = sorted(S.world_key.unique(), key=_key_sort)
+    wid = {w: f'W{i + 1}' for i, w in enumerate(order)}
+    # WORLD_NAMES (keyed on the task||sig key OR the signature alone) overrides the invented labels.
+    S['world_id'] = S.world_key.map(
+        lambda k: WORLD_NAMES.get(k, WORLD_NAMES.get(k.split('  ||  ')[-1], wid.get(k))))
+
+    print('WORLDS in this directory (numbered by TASK stage, then size).')
     print('  NOTE the log records no world number -- these labels are invented here. Put the lab\'s')
     print('  own names in session_index.WORLD_NAMES to replace them.')
     for w in order:
-        g = S[S.world_key == w]          # the PAIR, not the signature alone
+        g = S[S.world_key == w]
+        task, _, sig = w.partition('  ||  ')
+        cfg = g.world_cfg.dropna().iloc[0] if g.world_cfg.notna().any() else ''
         vs = g.view_scale.dropna().unique()
         vs_s = f'{vs[0]}' if len(vs) == 1 else ('NONE -- must be supplied' if not len(vs)
                                                 else f'CONFLICTING {list(vs)}')
-        sig, _, cfg = w.partition('  ||  ')
-        print(f'  {(g.world_id.iloc[0] if len(g) else wid[w])}  {sig}')
+        print(f'  {(g.world_id.iloc[0] if len(g) else wid[w])}  {task:<20} {sig}')
         print(f'       icons: {cfg}')
         print(f'       {len(g):>3} session(s)   {g.day.min()} .. {g.day.max()}   '
               f'view_scale {vs_s}')
@@ -804,6 +846,19 @@ def protocol_census(S):
     ct = S.pivot_table(index='world_id', columns='task', values='name', aggfunc='count',
                        fill_value=0)
     print(ct.to_string())
+
+    # SHOW sessions whose first 10 trials are NOT a stable single task (Maryam): the task label is
+    # only a settled guess for these, so they are surfaced for a look rather than trusted silently.
+    if 'task_stable' in S.columns:
+        uns = S[~S.task_stable.fillna(False)]
+        print(f'\nFIRST-10-TRIALS STABILITY: {len(S) - len(uns)}/{len(S)} sessions stable.')
+        if len(uns):
+            print(f'  {len(uns)} session(s) NOT stable in the first 10 trials -- inspect these:')
+            for _, r in uns.iterrows():
+                extra = '' if r.get('task_union', '') in ('', r.task) else \
+                    f"   whole-log union says {r.get('task_union')}"
+                print(f"    {r['name']:<30} settled={r.task:<18} "
+                      f"trials: {r.get('task_seq', '')}{extra}")
 
     rows = []
     for (w, task), g in S.groupby(['world_id', 'task']):

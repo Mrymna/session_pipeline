@@ -208,6 +208,49 @@ def board_segments(log, min_batches=3):
                  task=classify_task(r[2])) for r in out]
 
 
+def first_trials_task(log, n=10):
+    """Classify the session's task from its FIRST n trials, and say whether it is STABLE.
+
+    Maryam (2026-08-26): to decide banishment vs timeout, look at the first ~10 trials rather than
+    the whole-log union of effects. The union folds a trial-0 lead-in (a session that opens under
+    the old task and switches) into the label, and it cannot tell a clean session from one whose
+    board keeps changing. Reading the task PER TRIAL from each spawn batch's board does both.
+
+    A trial = one spawn batch; its task is classified from that batch's `current` icon set. A single
+    differing FIRST trial is allowed -- that is the documented trial-0 timeout->banishment switch.
+    Anything less consistent than that returns stable=False, so the caller can SHOW the session
+    instead of silently labelling it.
+
+    Returns dict(task, stable, seq, n_lead):
+      task    the settled task over the first n trials (after any single trial-0 lead-in)
+      stable  True iff the trials after the lead-in are all that one task, and the lead-in is <=1
+      seq     the per-trial task for the first n batches -- print this to inspect an unstable session
+      n_lead  how many leading trials differ from the settled task (0, or 1 for a clean switch)
+    """
+    sp = sorted(log.get('spawns') or [], key=lambda x: x.get('time', 0))
+    batches = {}
+    for b in sp:
+        t = b.get('time')
+        if t is None:
+            continue
+        eff = {i.get('effect') for i in (b.get('current') or []) if i.get('effect')}
+        if not eff and b.get('effect'):
+            eff = {b['effect']}
+        if t not in batches or len(eff) > len(batches[t]):   # keep the fullest board at a timestamp
+            batches[t] = eff
+    seq = [classify_task(eff) for _, eff in sorted(batches.items())[:n]]
+    if not seq:
+        return dict(task='unknown', stable=False, seq=[], n_lead=0)
+    # the settled task = the most common one AFTER a possible single-trial lead-in
+    body = seq[1:] if len(seq) > 1 and seq[0] != seq[1] else seq
+    settled = max(set(body), key=body.count)
+    n_lead = 0
+    while n_lead < len(seq) and seq[n_lead] != settled:
+        n_lead += 1
+    stable = n_lead <= 1 and all(t == settled for t in seq[n_lead:])
+    return dict(task=settled, stable=bool(stable), seq=seq, n_lead=n_lead)
+
+
 def protocol_switch(log, min_batches=3, max_lead_batches=1):
     """(switch_time_ms, segments) for a session that opens under a different board.
 
