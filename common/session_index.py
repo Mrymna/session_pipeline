@@ -277,6 +277,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
                    n_worlds_in_log=0, effects='',
                    effects_offered='', never_collected='',
                    task_stable=False, task_seq='', task_union='',
+                   camera_stable=None, camera_move_frame=np.nan, camera_move_ms=np.nan,
                    has_banish=False, has_multiplier=False, max_multiplier=0,
                    use=False, note='', warn='')
         try:
@@ -331,12 +332,35 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         vs, src = _read_view_scale(d, rec['mouse'], view_scales, rec['world'])
         rec['view_scale'], rec['vs_src'] = vs, src
 
-        # a session.json flagged by the camera check is not analysable -- keep it visible
+        # CAMERA CHECK. This is a VIDEO-pipeline result (detect_view_shift samples video frames), so
+        # it is NOT in log.json -- it only exists once tracking has run and written session.json /
+        # opticflow/camera_check.json. From the log alone it is UNKNOWN, so camera_stable is a
+        # TRI-STATE: True = checked and stable, False = camera MOVED, None = not checked yet.
+        #   camera_move_frame / camera_move_ms = where the shift began (NaN if stable or unchecked).
+        # NB this is unrelated to `switch_ms` below, which is the PROTOCOL (board) switch, not the
+        # camera -- two different 'switches'.
         cam_moved = False
         sj = d / 'session.json'
+        cc = d / 'opticflow' / 'camera_check.json'
         if sj.exists():
             try:
-                cam_moved = bool(json.load(open(sj)).get('camera_moved'))
+                _sj = json.load(open(sj))
+                if 'camera_moved' in _sj:
+                    cam_moved = bool(_sj.get('camera_moved'))
+                    rec['camera_stable'] = not cam_moved
+                    if _sj.get('camera_move_onset_frame') is not None:
+                        rec['camera_move_frame'] = float(_sj['camera_move_onset_frame'])
+            except Exception:
+                pass
+        if cc.exists():
+            try:
+                _cc = json.load(open(cc))               # the fuller record (frame AND seconds)
+                cam_moved = bool(_cc.get('moved'))
+                rec['camera_stable'] = not cam_moved
+                if _cc.get('onset_frame') is not None:
+                    rec['camera_move_frame'] = float(_cc['onset_frame'])
+                if _cc.get('onset_s') is not None:
+                    rec['camera_move_ms'] = float(_cc['onset_s']) * 1000.0
             except Exception:
                 pass
 

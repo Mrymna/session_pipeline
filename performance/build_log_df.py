@@ -187,6 +187,10 @@ def session_row(row, T):
         keep_of_day=bool(row.get('keep_of_day', True)),
         effects=row.get('effects', ''), effects_offered=row.get('effects_offered', ''),
         never_collected=row.get('never_collected', ''),
+        # camera check (only present where tracking has run): True stable / False moved / None unchecked
+        camera_stable=row.get('camera_stable'),
+        camera_move_frame=row.get('camera_move_frame', np.nan),
+        camera_move_ms=row.get('camera_move_ms', np.nan),
         task_description=pfl.TASK_DESCRIPTION.get(row.get('task'), ''),
         has_multiplier=pfl.log_has_multiplier(log),
         n_trials_total=len(T),
