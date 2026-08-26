@@ -50,7 +50,7 @@ BUILD_VERSION = 2
 # that TRIAL happened in ('NORMAL' / 'BANISH_WORLD') -- a different thing from the world the SESSION
 # was recorded on, and the authority for it, since the log does not record the world swap.
 ID_COLS = ['session', 'mouse', 'day', 'time', 'task', 'task_stable', 'task_seq',
-           'world_sig', 'world_id', 'view_scale', 'dir']
+           'world_sig', 'texture_id', 'view_scale', 'dir']
 _ID_SOURCE = {'world_sig': 'world'}     # identity column -> the discover-table column it comes from
 
 VALENCE = {'single_reward': +1, 'double_reward': +1, 'timeout': -1, 'banish': -1, 'unbanish': 0}
@@ -257,7 +257,7 @@ def build_all(main_dir, pattern='*', progress=True, verbose=True, one_per_day=Tr
             Si = sidx.one_per_day(Si, keep='last', verbose=verbose, mark_only=True)
         frames.append(Si)
     S = pd.concat(frames, ignore_index=True)
-    # assigns world_id in place; silent because the world numbering is not this notebook's focus
+    # assigns texture_id in place; silent because the world numbering is not this notebook's focus
     # (the task is). Call sidx.task_protocol(S) directly if you want the world listing.
     sidx.task_protocol(S, verbose=False)
     return build(S, progress=progress, verbose=verbose)

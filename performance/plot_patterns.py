@@ -218,7 +218,7 @@ def overview(X, T=None, out_path=None):
     fig, ax = plt.subplots(2, 3, figsize=(17, 9))
 
     a = ax[0, 0]
-    ct = X.pivot_table(index='mouse', columns='world_id', values='session',
+    ct = X.pivot_table(index='mouse', columns='texture_id', values='session',
                        aggfunc='count').fillna(0)
     ct.plot(kind='bar', stacked=True, ax=a, colormap='tab20', width=.7)
     a.set_ylabel('sessions'); a.set_xlabel('')
