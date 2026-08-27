@@ -84,6 +84,80 @@ def cluster_overview(C, title=''):
     plt.tight_layout(); return fig
 
 
+def cluster_overview_by_task(Cs, title=''):
+    """cluster_overview with ONE ROW PER TASK (Cs = {task: clustered_trials}), so banish and timeout
+    sit under each other and are directly comparable. Columns = trials-per-cluster + the four defining
+    features; each column shares its y-axis across the task rows."""
+    tasks = [t for t in Cs if len(Cs[t])]
+    if not tasks:
+        fig, a = plt.subplots(figsize=(6, 2)); a.axis('off')
+        a.text(.5, .5, 'no clustered trials for any task', ha='center'); return fig
+    allnames = set().union(*[set(Cs[t].cluster_name.unique()) for t in tasks])
+    names = _order(list(allnames))
+    feats = [('path_efficiency', 'efficiency (higher = direct)'), ('time_in_corner', 'time in corner'),
+             ('speed_std', 'speed variability'), ('dur_s', 'trial length (s)')]
+    feats = [(c, l) for c, l in feats if all(c in Cs[t].columns for t in tasks)]
+    ncol = 1 + len(feats)
+    fig, ax = plt.subplots(len(tasks), ncol, figsize=(3.3 * ncol, 3.5 * len(tasks)),
+                           squeeze=False, sharey='col')
+    for r, t in enumerate(tasks):
+        C = Cs[t]
+        a0 = ax[r][0]
+        counts = [int((C.cluster_name == n).sum()) for n in names]
+        a0.bar(range(len(names)), counts, color=[_col(n, i) for i, n in enumerate(names)])
+        a0.set_xticks(range(len(names))); a0.set_xticklabels(names, rotation=20, ha='right', fontsize=7)
+        for i, c in enumerate(counts):
+            a0.text(i, c, str(c), ha='center', va='bottom', fontsize=8, fontweight='bold')
+        a0.set_ylabel(f'{t}\n(trials)', fontweight='bold', fontsize=9); a0.grid(alpha=.2, axis='y')
+        if r == 0:
+            a0.set_title('trials per cluster', fontweight='bold', fontsize=9)
+        for a, (c, lab) in zip(ax[r][1:], feats):
+            for i, n in enumerate(names):
+                v = pd.to_numeric(C.loc[C.cluster_name == n, c], errors='coerce').dropna()
+                m = v.mean(); s = v.std() / np.sqrt(len(v)) if len(v) else 0
+                a.bar(i, m, color=_col(n, i)); a.errorbar(i, m, yerr=s, fmt='none', ecolor='k', capsize=3)
+            a.set_xticks(range(len(names))); a.set_xticklabels(names, rotation=20, ha='right', fontsize=7)
+            a.grid(alpha=.2, axis='y')
+            if r == 0:
+                a.set_title(lab, fontweight='bold', fontsize=9)
+    fig.suptitle(title or 'Path clusters by task (one row per task)', fontweight='bold', fontsize=12)
+    plt.tight_layout(); return fig
+
+
+def cluster_scatter_by_task(Cs, title=''):
+    """cluster_scatter with ONE ROW PER TASK -- the feature planes for banish and timeout stacked so
+    they can be compared. Each column shares its axes across the task rows."""
+    tasks = [t for t in Cs if len(Cs[t])]
+    if not tasks:
+        fig, a = plt.subplots(figsize=(6, 2)); a.axis('off')
+        a.text(.5, .5, 'no clustered trials for any task', ha='center'); return fig
+    allnames = set().union(*[set(Cs[t].cluster_name.unique()) for t in tasks])
+    names = _order(list(allnames))
+    planes = [('time_in_corner', 'path_efficiency', 'time in corner', 'path efficiency'),
+              ('dur_s', 'path_efficiency', 'trial length (s)', 'path efficiency')]
+    planes = [p for p in planes if all(p[0] in Cs[t].columns and p[1] in Cs[t].columns for t in tasks)]
+    fig, ax = plt.subplots(len(tasks), len(planes), figsize=(5.5 * len(planes), 4.4 * len(tasks)),
+                           squeeze=False, sharex='col', sharey='col')
+    for r, t in enumerate(tasks):
+        C = Cs[t]
+        for j, (a, (cx, cy, lx, ly)) in enumerate(zip(ax[r], planes)):
+            for i, n in enumerate(names):
+                g = C[C.cluster_name == n]
+                a.scatter(pd.to_numeric(g[cx], errors='coerce'), pd.to_numeric(g[cy], errors='coerce'),
+                          s=18, alpha=.6, color=_col(n, i), label=n)
+            if cx == 'dur_s':
+                a.set_xscale('log')
+            a.grid(alpha=.2)
+            if r == len(tasks) - 1:
+                a.set_xlabel(lx)
+            if r == 0:
+                a.set_title(f'{ly} vs {lx}', fontweight='bold')
+            if j == 0:
+                a.set_ylabel(f'{t}\n{ly}', fontweight='bold', fontsize=9); a.legend(fontsize=7)
+    fig.suptitle(title or 'Path clusters by task (one row per task)', fontweight='bold', fontsize=12)
+    plt.tight_layout(); return fig
+
+
 def cluster_scatter(C, title=''):
     """The clusters in REAL feature units -- NOT the stored PCA.
 
