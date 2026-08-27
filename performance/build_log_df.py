@@ -31,9 +31,8 @@ VIEW exactly as the game camera does: it follows the avatar, so the screen is a 
 canvas). vw, vh = 800 / view_scale, 600 / view_scale; an icon is ON SCREEN at a sample when its
 CENTRE is inside the box, `|icon.x - avatar.x| <= vw/2 AND |icon.y - avatar.y| <= vh/2`.
     view_scale 0.35 -> 2285.7 x 1714.3 wu (JPAS_0168, 2400x2400 world)
-    view_scale 0.56 -> 1428.6 x 1071.4 wu (JPAS_0231, 2000x2000 world)
 `view_scale` is a property of the WORLD, is NOT in the log, and must be supplied per session (see
-`common/viewport.py`); only the RATIO SKETCH/view_scale is physically pinned (validated vs ui.mp4).
+`common/viewport.py`); only the RATIO SKETCH/view_scale matters.
 Caveat: it is CENTRE-inside (an icon is counted only once its centre enters the box), so it slightly
 UNDER-counts partially-visible icons -- see the notebook glossary.
 

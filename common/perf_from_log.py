@@ -446,10 +446,8 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
     #     vw, vh = 800 / view_scale, 600 / view_scale
     # An icon counts as ON SCREEN at a sample when its CENTRE is inside the box:
     #     on_screen = |icon.x - avatar.x| <= vw/2  AND  |icon.y - avatar.y| <= vh/2   (see below)
-    # Worked example:  view_scale 0.56 -> 1428.6 x 1071.4 wu (JPAS_0231, 2000x2000 world)
-    #                  view_scale 0.35 -> 2285.7 x 1714.3 wu (JPAS_0168, 2400x2400 world)
-    # Only the RATIO SKETCH/view_scale is physically pinned (validated against ui.mp4 for 0231);
-    # 800x600 is the game's sketch size and view_scale carries the per-world zoom.
+    # Worked example (JPAS_0168):  view_scale 0.35 -> 2285.7 x 1714.3 wu on the 2400x2400 world.
+    # Only the RATIO SKETCH/view_scale matters (the viewport is that many world units across).
     vw, vh = SKETCH_W / view_scale, SKETCH_H / view_scale
 
     w0 = log['worlds'][0] if isinstance(log['worlds'], list) else log['worlds']

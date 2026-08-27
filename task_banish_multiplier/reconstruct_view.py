@@ -23,12 +23,12 @@ Geometry, all from the log where possible:
     spans SKETCH/s world units and the world edge shows as BLACK border when the mouse
     corners -- that black is part of what reaches the eye and is NOT cropped away.
     THE WORLD VIEW = a box of  SKETCH / view_scale  world units, centred on the avatar
-    (SKETCH = 800 x 600 px). Worked: view_scale 0.35 -> 800/0.35 x 600/0.35 = 2285.7 x 1714.3 wu
-    (JPAS_0168); view_scale 0.56 -> 1428.6 x 1071.4 wu (JPAS_0231). This is the SAME box the
-    performance code uses to decide if an icon is on screen: an icon is visible at a sample when
-    its CENTRE is inside the box, |icon.x - avatar.x| <= vw/2 AND |icon.y - avatar.y| <= vh/2
-    (vw, vh = SKETCH / view_scale). Only the ratio SKETCH/view_scale is physically pinned
-    (validated against ui.mp4); 800x600 is the sketch size and view_scale is the per-world zoom.
+    (SKETCH = 800 x 600 px). Worked (JPAS_0168): view_scale 0.35 -> 800/0.35 x 600/0.35
+    = 2285.7 x 1714.3 wu on the 2400x2400 world. This is the SAME box the performance code uses to
+    decide if an icon is on screen: an icon is visible at a sample when its CENTRE is inside the
+    box, |icon.x - avatar.x| <= vw/2 AND |icon.y - avatar.y| <= vh/2 (vw, vh = SKETCH /
+    view_scale). Only the ratio SKETCH/view_scale matters (the viewport is that many world units
+    across).
   - avatar = the GREEN breathing pair (heroArGreenBr-50 / heroBrGreenBr-50) alternated every 0.5 s
     and mirrored L/R by travel direction, drawn upright (the sprite never rotates); the heading
     arrow is a green triangle OUTLINE rotated by theta, drawn only while moving.
