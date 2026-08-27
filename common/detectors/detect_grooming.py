@@ -2,7 +2,7 @@
 Grooming detector -- paw+whisker flow-high, gated on joystick stillness (port of
 JPAS_0231/detect_grooming.py, generalised to this session's two whisker ROIs + common fps clock).
 
-THE CONFOUND (Maryam, 231): "paw AND whisker |flow| both high" alone fires on active
+THE CONFOUND (from 231): "paw AND whisker |flow| both high" alone fires on active
 LOCOMOTION / joystick-pushing, not grooming -- a forelimb pushing the joystick lights up the paw
 ROI exactly like a grooming paw. THE FIX: real grooming needs the paw OFF the joystick, so the
 joystick is (nearly) still. Gate the flow-high mask on per-frame joystick speed:

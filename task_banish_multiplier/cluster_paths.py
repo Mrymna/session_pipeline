@@ -3,7 +3,7 @@ Path/behaviour clustering for a `banish_multiplier` session (port of JPAS_0231/c
 the reusable pipeline). This gives every analyzable trial a PATH-TYPE label used downstream as the
 CONFLICT stratifier for the whisker<->paw hypotheses (Corner-dwelling / low-efficiency = high conflict).
 
-Method (Maryam's, from 231): per-trial PATH-GEOMETRY feature vector -> StandardScaler -> KMeans
+Method (from 231): per-trial PATH-GEOMETRY feature vector -> StandardScaler -> KMeans
 (k in {2,3} by silhouette) -> merge any cluster < MIN_CLUSTER into the nearest -> name by RELATIVE
 efficiency ranking (highest eff = Direct, lowest = Corner-dwelling, middle = Exploratory) -> PCA(2)
 for the diagnostic scatter only.
@@ -23,7 +23,7 @@ MOTOR / WHISKER / HEADING / PUPIL are held OUT as independent outcomes (tested v
 any relationship stays non-circular. feature_selection_report() writes the redundancy+ablation
 justification.
 
-*** The MULTIPLIER is deliberately NOT a clustering feature *** (Maryam asked, 2026-08-18; 231 had no
+*** The MULTIPLIER is deliberately NOT a clustering feature *** (2026-08-18; 231 had no
 multiplier so this is the one genuinely new decision for this task variant). Three reasons, all
 checked on this session and reported by multiplier_outcome_report():
   1. It is NOT path geometry -- it is a REWARD-STATE variable (the streak 1-4). Its correlation with

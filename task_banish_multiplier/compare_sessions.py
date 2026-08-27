@@ -6,7 +6,7 @@ CROSS-SESSION performance tracking -- compare the same animal across days/weeks.
         -> <first session>/debug/session_comparison.png  (+ a printed table)
         -> --out DIR  to write elsewhere
 
-HOW SHOULD SESSIONS BE COMPARED?  (Maryam asked "box plots per day of D?", 2026-08-18)
+HOW SHOULD SESSIONS BE COMPARED?  (the question was "box plots per day of D?", 2026-08-18)
 --------------------------------------------------------------------------------------
 Short answer: **box plots are right for the per-TRIAL measures, and wrong for D.**
 

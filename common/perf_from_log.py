@@ -71,8 +71,8 @@ def world_opportunity(log):
     """(active_benefits, active_detriments, good_opportunity_ratio) from the WORLD's effect defs.
 
     active_benefits / active_detriments = how many GOOD / BAD icons the world puts on the board
-    (Maryam's exact effect lists: benefits {single_reward, double_reward, money}, detriments
-    {timeout, banish, debt}). Uses the counts the log stores where present (newer sessions log
+    (effect lists: benefits {single_reward, double_reward, money}, detriments {timeout, banish,
+    debt}). Uses the counts the log stores where present (newer sessions log
     `active_benefits` / `active_detriments`), else counts `world['effects']` by effect name (older
     logs, e.g. JPAS_0231).
 
@@ -98,7 +98,7 @@ def world_opportunity(log):
 
 def prob_at_least(y, x, p):
     """P(>= y successes in x Bernoulli(p) trials) -- the one-sided binomial upper tail. This is the
-    `prob_at_least_y_in_x` from Maryam's snippet: is he collecting MORE positives than the world's
+    `prob_at_least_y_in_x`: is he collecting MORE positives than the world's
     opportunity ratio would give by chance? Returns nan when there are no trials or no ratio."""
     if x is None or x <= 0 or p is None or not np.isfinite(p):
         return np.nan
@@ -122,7 +122,7 @@ TASK_RULES = [
          none={'timeout', 'banish', 'double_reward', 'unbanish'}),
 ]
 
-# What separates the three protocols, in one place (Maryam, 2026-08-25):
+# What separates the three protocols, in one place (2026-08-25):
 #   banish_multiplier   reward(+multiplier) + banish/unbanish -> SHADOW REALM, the animal CAN move
 #   timeout_multiplier  reward(+multiplier) + timeout         -> FROZEN, the animal CANNOT move
 #   timeout_double      reward + double_reward + timeout, NO multiplier  (the old JPAS_0231 task)
@@ -274,7 +274,7 @@ def _first_batches(log, n=None):
 def first_trials_task(log, n=10):
     """Classify the session's task from its FIRST n trials by MAJORITY, and flag ties.
 
-    Maryam (2026-08-26): to decide banishment vs timeout, read the task from each of the first ~10
+    (2026-08-26) To decide banishment vs timeout, read the task from each of the first ~10
     trials' boards, not from the whole-log union of effects (which folds a trial-0 lead-in into the
     label). A trial = one spawn batch; its task is classified from that batch's `current` icon set,
     i.e. the icons actually on the board -- the same thing visible in the video at that time.
@@ -318,7 +318,7 @@ def protocol_switch(log, min_batches=3, max_lead_batches=1):
     """(switch_time_ms, segments) for a session that opens under a different board.
 
     *** THE SWITCH IS ONLY HONOURED AT THE VERY START OF THE SESSION. ***
-    Maryam: on this animal the leftover board can only appear in TRIAL 0, never later. So a
+    On this animal the leftover board can only appear in TRIAL 0, never later. So a
     change detected mid-session is not a protocol switch -- it is a gap in the board or a logging
     artefact -- and truncating there would silently throw away most of a good session while
     looking perfectly healthy in the output.
@@ -598,7 +598,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
             return np.nan
         return ((acc if v is None else v) - p0) / (1 - p0)
     lo, hi = _wilson(pos, pos + neg)
-    # world-DESIGN opportunity baseline (Maryam's active_benefits / active_detriments)
+    # world-DESIGN opportunity baseline (active_benefits / active_detriments)
     ab, ad, opp = world_opportunity(log)
     _switch_info = dict(switch_ms=switch_ms, n_before_switch=n_before)
     return dict(**_switch_info,

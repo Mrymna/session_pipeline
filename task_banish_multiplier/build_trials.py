@@ -1,7 +1,7 @@
 """
 PIPELINE 2 (banish / unbanish + single_reward-with-multiplier) -- initial LOG-ONLY clean
 trial table.  Trial = one SPAWN BATCH -> the next spawn batch (each collection triggers the
-next batch at the same ms), which is Maryam's definition ("trial = spawn"). The batch's
+next batch at the same ms), which is the agreed definition ("trial = spawn"). The batch's
 `current` icon list gives the world + the on-screen targets for that trial directly.
 
 Outcome model (validated against JPAS_0168):
@@ -33,7 +33,7 @@ REWARD_EFFECTS = {'single_reward'}
 # outcomes that are a real collection -> a trial usable in analysis. A trial that ends
 # WITHOUT a collection is either a mid-session board RESHUFFLE (icons replaced, nothing
 # collected) or the session-end tail ('incomplete'); both are excluded from analysis
-# (analyze=False) per Maryam: "label it reshuffle and don't use the data in any analysis".
+# (analyze=False): "label it reshuffle and don't use the data in any analysis".
 ANALYZE_OUTCOMES = {'single_reward', 'banish', 'unbanish'}
 
 

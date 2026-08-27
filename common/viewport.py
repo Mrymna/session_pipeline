@@ -5,12 +5,12 @@ The game draws with `translate(centre); scale(s); translate(-x,-y)` on an 800x60
 mouse sees `SKETCH / s` world units centred on the avatar, and anything past the world edge is BLACK
 (that black is part of what reaches the eye -- it is why the screen dims when he corners).
 
-*** `s` IS A PROPERTY OF THE WORLD, NOT A CONSTANT OF THE RIG (Maryam, 2026-08-18). ***
+*** `s` IS A PROPERTY OF THE WORLD, NOT A CONSTANT OF THE RIG (2026-08-18). ***
 Different worlds are shown at different zoom, so a session's scale depends on which world it ran.
 It is NOT recorded in log.json. Known values:
 
     JPAS_0231   s = 0.56   (read from the game code)   -> view 1428.6 x 1071.4 wu, world 2000x2000
-    JPAS_0168   s = 0.35   (CONFIRMED by Maryam)       -> view 2285.7 x 1714.3 wu, world 2400x2400
+    JPAS_0168   s = 0.35   (CONFIRMED)                -> view 2285.7 x 1714.3 wu, world 2400x2400
 
 Because it is per-world, there is deliberately **NO usable default**: `viewport()` RAISES if
 `session.json` has no `view_scale`. A silent default is the dangerous option here -- it would let a
@@ -18,7 +18,7 @@ new session quietly inherit another world's zoom, and every "could the mouse SEE
 (icon visibility, the attention gating, the performance chance-baseline) would be wrong without
 anything looking broken. Set it per session:
 
-    session.json  ->  "view_scale": 0.35, "view_scale_source": "confirmed by Maryam 2026-08-18"
+    session.json  ->  "view_scale": 0.35, "view_scale_source": "confirmed 2026-08-18"
 """
 SKETCH_W, SKETCH_H = 800, 600
 

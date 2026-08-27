@@ -2,7 +2,7 @@
 OUTCOME VALENCE at the collection instant - does whisker amplitude differ when the mouse hits a
 POSITIVE (single_reward) vs a NEGATIVE (banish) icon?
 
-This is the piece neither H1 nor H2 covers (Maryam asked, 2026-08-18):
+This is the piece neither H1 nor H2 covers (2026-08-18):
   - H1 tests CARRY-OVER (did trial N-1 being an error change trial N)          -> not the hit;
   - H2 tests MOVEMENT-LOCKED resets (whisker follows each joystick re-steer)   -> not the hit;
   - THIS tests FEEDBACK-LOCKED valence: sweep around t=0 = the collection, by outcome.

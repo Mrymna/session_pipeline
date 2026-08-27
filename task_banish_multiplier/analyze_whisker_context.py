@@ -1,5 +1,5 @@
 """
-Whisker sweep AMPLITUDE in two contexts Maryam asked for (2026-08-18):
+Whisker sweep AMPLITUDE in two contexts (2026-08-18):
 
   A. FIRST HALF vs SECOND HALF of the session's trials -- does whisking effort decay as the animal
      gets tired / sated, or build as he warms up? Split by trial ORDER (not by time), so the two

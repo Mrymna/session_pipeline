@@ -1,7 +1,7 @@
 """
 Per-frame pupil/iris segmentation for a session -- JPAS_0168-class (bright-glint dark eye).
 
-Established interactively with Maryam (2026-08-11): this mouse's eye is a low-contrast DARK
+Established interactively (2026-08-11): this mouse's eye is a low-contrast DARK
 almond and the only rock-solid landmark is the bright corneal **glint**. The pupil/iris is a
 dark disc and the **glint sits INSIDE it** (near centre-right when dilated, on the lower-right
 edge when constricted). So the fit:
@@ -10,7 +10,7 @@ edge when constricted). So the fit:
   - uses an ABSOLUTE-anchored threshold `thr = p5(window) + MARG` -- NOT a fixed percentile: a
     fixed fraction of a mostly-dark window pins the radius and cannot show dilation, whereas the
     absolute anchor lets the disc grow when the pupil dilates (validated on f4522: the pupil core
-    darkens 46->33 and the disc grows to r~10, x-extent [30,52] ~ Maryam's marked [29,54]).
+    darkens 46->33 and the disc grows to r~10, x-extent [30,52] ~ the marked [29,54]).
   - convex-hull ellipse, roundness floor, radius cap; pick the LARGEST valid dark blob near the
     glint.
 
@@ -18,7 +18,7 @@ Runs on the ORIGINAL (glint-intact) video -- the glint is the anchor here, so it
 (the noreflection video erased it). The detected glint doubles as the corneal-reflection track
 (glint_x/y), so a separate track_cr.py is not needed for this session.
 
-** ACCURACY IS INHERENTLY LIMITED for this mouse ** (Maryam QC): position + blink are reliable,
+** ACCURACY IS INHERENTLY LIMITED for this mouse ** (per QC): position + blink are reliable,
 pupil SIZE (dilation/constriction) is only APPROXIMATE -- the iris top hides under the lid on some
 frames (e.g. f22176 reads over-size) and cannot always be pinned (e.g. f42352). Validate on RAW
 crops (contrast filters make it harder to read), never trust size without eyeballing.

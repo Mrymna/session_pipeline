@@ -177,7 +177,7 @@ def session_trials(row, verbose=False):
         T['drops'] = [
             (m if (o == 'single_reward' and pd.notna(m)) else FIXED_DROPS.get(o, 0))
             for o, m in zip(T.outcome, T.get('multiplier', pd.Series([np.nan] * len(T))))]
-    # per-trial world-opportunity, banish_multiplier only (Maryam). Benefits / detriments among THIS
+    # per-trial world-opportunity, banish_multiplier only. Benefits / detriments among THIS
     # trial's on-screen icons, using the exact effect lists. NAMED board_* on purpose: this is a
     # DIFFERENT quantity from the session `good_opportunity_ratio`, which is the WORLD DESIGN (from
     # world['effects']); board_good_ratio is what was actually on the board that trial and so varies

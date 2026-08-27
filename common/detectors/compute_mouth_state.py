@@ -7,7 +7,7 @@ lick rhythm (tested: dominant 0.4 Hz, not ~7 Hz). So mouth-state here is built o
 work: LICKING from the flow-rhythm detector (opticflow/licking.npz, mouth fy 5-12 Hz, validated
 7.7 Hz within bouts) and GROOMING from the paw+whisker joystick-still mask (groom_mask_clean.npy).
 
-GROOMING is PRIORITISED over licking (Maryam, corrected 2026-08-11): grooming REQUIRES the paw
+GROOMING is PRIORITISED over licking (corrected 2026-08-11): grooming REQUIRES the paw
 raised to the face, and a raised paw sweeps over the mouth ROI rhythmically -> the flow lick-detector
 FALSE-fires during grooming. Verified at f72912-72934 (debug/lick_groom_72920.png): the paw is clearly
 UP the whole episode = grooming, not licking. So where the sustained paw-up grooming mask overlaps a

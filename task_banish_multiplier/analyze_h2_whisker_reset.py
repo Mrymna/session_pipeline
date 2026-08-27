@@ -354,7 +354,7 @@ def run(session_dir, write=True):
     fig.suptitle(f"{sess['mouse_id']} H2 - whisker RESET time-locked to paw (joystick) movement  "
                  f"[whisker=optic-flow AMPLITUDE, not set-point; 33 ms resolution; lick/groom excluded; "
                  f"reward trials split by MULTIPLIER/streak; ONE session]", fontsize=10.5, fontweight='bold')
-    # FOOTNOTE band: the three method terms on this figure, in plain language. Asked for by Maryam
+    # FOOTNOTE band: the three method terms on this figure, in plain language. Requested
     # (2026-08-18) -- "circular-shift null", "bootstrap 95% CI" and "fixed lag" are not self-evident.
     fig.text(0.008, 0.014,
              "HOW TO READ THIS FIGURE\n"

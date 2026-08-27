@@ -8,7 +8,7 @@ HOLDS; single-frame jitter reverts (fails the hold) and pupil-size drift is a sl
 the fast step). Both `cx/cy` and `glint_x/y` come from segment_pupil's pupil_track.npz -- no separate
 cr_track needed here.
 
-** APPROXIMATE for this mouse ** (Maryam asked for an estimate): (1) the pupil centre itself is only
+** APPROXIMATE for this mouse ** (an estimate): (1) the pupil centre itself is only
 approximate here (the fit is approximate), so P-CR is noisier than 231's; (2) there is no
 head_motion.npz for this session, so the numerical head-motion sanity guards 231 used (corr with
 |head|, % in top-decile head) CANNOT be computed -- the method is head-clean by construction but that

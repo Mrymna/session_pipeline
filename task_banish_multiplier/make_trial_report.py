@@ -1,6 +1,6 @@
 """
 Per-trial multi-signal PDF report for a banish_multiplier session (JPAS_0168-class) -- a FAITHFUL
-match of JPAS_0231/make_trial_report.py's per-trial page (Maryam: "exact same data per trial as
+match of JPAS_0231/make_trial_report.py's per-trial page ("exact same data per trial as
 0231, plus the multiplier"), adapted for THIS task's outcomes + THIS session's detectors.
 
 Per ANALYZABLE trial (one page, disjoint clean window = spawn batch -> collection, t=0=collection):
@@ -15,7 +15,7 @@ Per ANALYZABLE trial (one page, disjoint clean window = spawn batch -> collectio
   row5  signals vs HEADING ERROR to the target (0 deg = facing it -> 180 = away), + saccade rug
 Plus a summary page and a reward-MAGNITUDE (multiplier) page.
 
-Reward structure (Maryam): only single_reward pays out; multiplier = reward streak 1-4 (caps at 4);
+Reward structure: only single_reward pays out; multiplier = reward streak 1-4 (caps at 4);
 banish captures the streak lost; unbanish = ESCAPE, no reward, resets to 1. Heading "target" = the
 trial's collected icon (target_x/y): the reward for single_reward, else the banish/unbanish icon.
 
@@ -44,7 +44,7 @@ from scipy.stats import pearsonr, mannwhitneyu, t as tdist   # noqa: E402
 
 OUTCOME_ORDER = ['single_reward', 'banish', 'unbanish']
 # DISPLAY names. Every reward in this task carries a multiplier (streak 1-4) -- there is no plain
-# "single" reward -- so the log's `single_reward` is shown as REWARD everywhere (Maryam, 2026-08-18).
+# "single" reward -- so the log's `single_reward` is shown as REWARD everywhere (2026-08-18).
 # These are labels only; `outcome` in df_trials_clean keeps the log's values.
 OUTCOME_DISPLAY = {'single_reward': 'reward', 'banish': 'banish', 'unbanish': 'unbanish (escape)'}
 OUTCOME_COL = {'single_reward': '#27ae60', 'banish': '#c0392b', 'unbanish': '#2980b9'}
@@ -944,7 +944,7 @@ class Report:
 
         def _stamp(fig, label=''):
             """Bottom-right page number on EVERY page, so a page can be referred to by number
-            (Maryam, 2026-08-18). The optional label names the page in the same stamp."""
+            (2026-08-18). The optional label names the page in the same stamp."""
             pageno[0] += 1
             fig.text(0.995, 0.006, f'{label}   p. {pageno[0]}'.strip(), ha='right', va='bottom',
                      fontsize=8, color='#555')

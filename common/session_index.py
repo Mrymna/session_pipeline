@@ -74,7 +74,7 @@ def normalise_mouse(raw):
 # The log records NO world number. `task_protocol` groups sessions by TEXTURE (the size/icon/texture
 # signature, paired with the task) and labels them `Text1..Textn` -- deliberately NOT `W1..Wn`,
 # because those texture groups are not the lab's region-based worlds and the labels must not be
-# mistaken for them (Maryam, 2026-08-26). They are ordered by task stage, then size. Put the lab's
+# mistaken for them (2026-08-26). They are ordered by task stage, then size. Put the lab's
 # own names here -- keyed on the `texture_key` ('<task>  ||  <signature>') or on the signature alone
 # -- and they replace the invented `Text` labels everywhere.
 WORLD_NAMES = {
@@ -87,7 +87,7 @@ WORLD_NAMES = {
 TASK_STAGE_RANK = {'reward_only': 0, 'timeout_multiplier': 1, 'banish_multiplier': 2}
 _OTHER_STAGE = 90     # timeout_double (the OLD 0231 experiment) and any unknown task sort last
 
-# The view scale is 0.35 for all animals / all worlds in the current setup (Maryam, 2026-08-26); the
+# The view scale is 0.35 for all animals / all worlds in the current setup (2026-08-26); the
 # world SIZE changes across the curriculum, the zoom does not. So this is the DEFAULT, used when no
 # more specific source applies -- change it here in one place. It is the LAST resort: session.json, a
 # view_scales= override, and KNOWN_VIEW_SCALE_BY_WORLD all take precedence, so a genuine exception can
@@ -204,7 +204,7 @@ def _read_view_scale(d, log_mouse, overrides, wsig=''):
             pass
     if wsig in KNOWN_VIEW_SCALE_BY_WORLD:
         return float(KNOWN_VIEW_SCALE_BY_WORLD[wsig]), 'known world'
-    # DEFAULT (Maryam, 2026-08-26): the view scale is 0.35 for all animals and all worlds in the
+    # DEFAULT (2026-08-26): the view scale is 0.35 for all animals and all worlds in the
     # current setup; only the world SIZE changes, not the zoom. So an unlisted world resolves to the
     # default rather than being marked unscorable. It is returned with vs_src='default' so a session
     # that fell back to it is still VISIBLE -- if a future world ever uses a different zoom, add it to
@@ -310,7 +310,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         rec['effects'] = '+'.join(effects)
         rec['effects_offered'] = '+'.join(offered)
         rec['never_collected'] = '+'.join(sorted(set(offered) - set(effects)))
-        # TASK from the FIRST 10 TRIALS' boards (Maryam): stable across them -> that task; not
+        # TASK from the FIRST 10 TRIALS' boards: stable across them -> that task; not
         # stable -> keep the settled guess but flag task_stable=False so the session is SHOWN, not
         # trusted. The whole-log union (task_union) is kept alongside as a cross-check -- when it
         # disagrees with the first-trials task, the union saw a later board the first trials did not.
@@ -378,7 +378,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
             notes.append(f"task is {rec['task']}, not the requested {task}")
         # WARNINGS do not disqualify a session -- they are things to look at. Folder names follow
         # <animal>_<date>_<HH;MM;SS>; anything extra (e.g. a trailing '_i') usually means the
-        # experimenter marked it, so it is surfaced but NOT excluded -- that call is Maryam's.
+        # experimenter marked it, so it is surfaced but NOT excluded -- that is a manual call.
         warns = []
         if not re.fullmatch(r'.+_\d{4}-\d{2}-\d{2}_\d{2};\d{2};\d{2}', d.name):
             warns.append('unusual folder-name suffix -- check what it marks')
@@ -598,7 +598,7 @@ def one_per_day(S, keep='last', verbose=True, mark_only=False):
 
     The real server directory does record two sessions on one date (seen on 2026-07-22), and for a
     LEARNING CURVE that is a problem: the x-axis is meant to be "training day", so a day with two
-    recordings contributes two points and is weighted twice against every other day. Maryam's rule
+    recordings contributes two points and is weighted twice against every other day. The rule
     for this animal is to KEEP THE LAST session of such a day (the later one is the one that ran to
     completion; an early short recording is usually a restart).
 
@@ -816,7 +816,7 @@ def task_protocol(S, verbose=True):
     W1, W2, ... to follow the TRAINING CURRICULUM -- by TASK first (`TASK_STAGE_RANK`), then by
     world SIZE within a task -- so reward_only is W1(+W2 if two sizes), the timeout world next, and
     banishment last. This replaces the old first-appearance-by-texture numbering, which put one
-    reused texture under several protocols (Maryam, 2026-08-26). The number is a LABEL for this
+    reused texture under several protocols (2026-08-26). The number is a LABEL for this
     listing, not an id from the log; the physical world (the `world` signature) still fixes
     view_scale, and analysis groups by TASK, never by this number.
 

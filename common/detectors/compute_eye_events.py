@@ -1,5 +1,5 @@
 """
-Eye events for a session -- BLINK + POSITION only (Maryam, 2026-08-11).
+Eye events for a session -- BLINK + POSITION only (2026-08-11).
 
 Scope this build: pupil SIZE is only APPROXIMATE for this mouse (the iris hides under the lid on
 some frames, e.g. f22176; can't always be pinned, e.g. f42352), so we do NOT classify
@@ -28,7 +28,7 @@ import numpy as np
 from scipy.ndimage import binary_dilation
 
 # A closure raises eye_mean. We first find the VALIDATED closure region (eye_mean over baseline,
-# dilated -- the frames Maryam confirmed are all blinks/squeezes), then PARTITION each closure into
+# dilated -- the frames confirmed to be all blinks/squeezes), then PARTITION each closure into
 # a full-BLINK core vs mild-SQUINT shoulders (231's "EYE SQUINT") by the pupil-fit shape: on a blink
 # the fit fails or goes elongated, on a squint the pupil stays round. This keeps the blink-event
 # count at the validated ~13 rather than inventing new events from fit noise.

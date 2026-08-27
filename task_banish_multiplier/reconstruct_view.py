@@ -34,7 +34,7 @@ Geometry, all from the log where possible:
     arrow is a green triangle OUTLINE rotated by theta, drawn only while moving.
   - the game's post-draw `fill(0,50)` overlay = a global x0.804 dim on the whole frame.
 
-The view scale is a property of the WORLD, so it DIFFERS PER SESSION (Maryam, 2026-08-18) and is
+The view scale is a property of the WORLD, so it DIFFERS PER SESSION (2026-08-18) and is
 not in the log -- it comes from `session.json["view_scale"]` via `common/viewport.py`, which RAISES
 rather than defaulting (a silent default would let a new session inherit another world's zoom and
 quietly corrupt every visibility-gated result). JPAS_0168 = **0.35** (confirmed), JPAS_0231 = 0.56.
@@ -79,7 +79,7 @@ BACKGROUND = {'NORMAL': 'worldLowContrastLowSaturationRed.png',
               'BANISH_WORLD': 'shadowRealmHex.png'}
 # ⚠️ The log's `texture` field is NOT the filename. `log['worlds'][*]['effects']` names the reward
 # texture "circles", but the asset the game actually draws is **circles2.png** (the faceted green
-# gem), NOT circles.png (a flat dotted disc) -- confirmed by Maryam, 2026-08-18. Do not "correct"
+# gem), NOT circles.png (a flat dotted disc) -- confirmed 2026-08-18. Do not "correct"
 # this back to circles.png by matching the log string. banish/unbanish do match their log names.
 ICON_TEX = {'single_reward': 'circles2.png',    # GREEN  reward  (log calls it "circles")
             'banish': 'fountains.png',          # BLUE   hazard -> throws him into the shadow realm
