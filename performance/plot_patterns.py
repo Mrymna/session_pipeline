@@ -312,3 +312,95 @@ def pooled_criterion(B, out_path=None, title=''):
     if out_path:
         fig.savefig(out_path, dpi=110); print(f'  wrote {out_path}')
     return fig
+
+
+def by_animal_pooled(X, sidx):
+    """One POOLED block per animal for a single task -- blocks_of(size=None) run within each mouse.
+
+    D is a WITHIN-animal measure, so animals are never merged into one number: each mouse is pooled
+    on its own and returned as its own row (mouse, n_sessions, criterion + stochastic columns). Used
+    for the across-animals grouped view. `X` must already be one task (blocks_of refuses to pool
+    across tasks).
+    """
+    rows = []
+    for m, g in X.groupby('mouse'):
+        d = sidx.blocks_of(g, size=None).iloc[0].to_dict()
+        d['mouse'] = m
+        rows.append(d)
+    return pd.DataFrame(rows).sort_values('mouse').reset_index(drop=True)
+
+
+def grouped_by_animal(A, title=''):
+    """The ACROSS-animals view that keeps every animal SEPARATE -- three panels, one bar per mouse:
+    (1) CONTROL vs CONFLICT criterion, (2) discrimination D, (3) P_board (does each trial kind beat
+    the world good:bad supply?). Animals are shown side by side, never pooled into one bar.
+    """
+    from scipy.stats import binomtest
+    fig, ax = plt.subplots(1, 3, figsize=(max(13, 2.4 * len(A) + 8), 5))
+    x = np.arange(len(A)); w = .38
+    labs = [f'{m}\n({int(n)} sess)' for m, n in zip(A.mouse, A.n_sessions)]
+
+    a = ax[0]                                                   # the criterion, control vs conflict
+    a.bar(x - w / 2, A.control_p, w, color='#7f8c8d', label='CONTROL (reward nearer)')
+    a.bar(x + w / 2, A.conflict_p, w, color='#e67e22', label='CONFLICT (punishment nearer)')
+    a.errorbar(x - w / 2, A.control_p, fmt='none', ecolor='k', capsize=3,
+               yerr=[(A.control_p - A.control_lo).clip(lower=0), (A.control_hi - A.control_p).clip(lower=0)])
+    a.errorbar(x + w / 2, A.conflict_p, fmt='none', ecolor='k', capsize=3,
+               yerr=[(A.conflict_p - A.conflict_lo).clip(lower=0), (A.conflict_hi - A.conflict_p).clip(lower=0)])
+    a.axhline(.5, ls=':', color='k'); a.set_ylim(0, 1); a.set_xticks(x); a.set_xticklabels(labs, fontsize=8)
+    a.set_ylabel('P(collected the reward)'); a.legend(fontsize=8)
+    a.set_title('CRITERION per animal\n(the two must separate)', fontweight='bold'); a.grid(alpha=.2, axis='y')
+
+    a = ax[1]                                                   # discrimination D per animal
+    a.bar(x, A.D, color='#2c3e50'); a.axhline(0, color='k', lw=1)
+    a.set_xticks(x); a.set_xticklabels([str(m) for m in A.mouse], fontsize=8, rotation=45, ha='right')
+    a.set_ylabel('D (visibility)')
+    a.set_title('DISCRIMINATION D per animal\n(above 0 = better than chance)', fontweight='bold')
+    a.grid(alpha=.2, axis='y')
+
+    a = ax[2]                                                   # P_board: conflict vs control, per animal
+    cpb, apb = [], []
+    for _, r in A.iterrows():
+        ratio = float(r.good_opportunity_ratio) if np.isfinite(r.good_opportunity_ratio) else np.nan
+        def _pb(k, n):
+            k, n = int(k), int(n)
+            return (binomtest(k, n, ratio, alternative='greater').pvalue
+                    if (n and np.isfinite(ratio) and ratio < 1) else np.nan)
+        apb.append(_pb(r.k_control, r.n_control)); cpb.append(_pb(r.k_conflict, r.n_conflict))
+    a.bar(x - w / 2, np.clip(apb, 1e-4, 1), w, color='#7f8c8d', label='CONTROL')
+    a.bar(x + w / 2, np.clip(cpb, 1e-4, 1), w, color='#e67e22', label='CONFLICT')
+    a.axhline(0.05, color='r', ls=':'); a.set_yscale('log')
+    a.set_xticks(x); a.set_xticklabels(labs, fontsize=8); a.set_ylabel('P_board (one-sided, log)')
+    a.legend(fontsize=8)
+    a.set_title('P_board vs world good:bad supply\n(below red = beats the supply)', fontweight='bold')
+    a.grid(alpha=.2, which='both', axis='y')
+
+    fig.suptitle(title, fontweight='bold', fontsize=12)
+    plt.tight_layout()
+    return fig
+
+
+def task_criterion(Xt, sidx, task='', show=True):
+    """ONE task, its own clear section: per-animal pooled criterion FIRST, then the across-animals
+    grouped view. `Xt` must be a single task (never pooled with another -- they are different
+    experiments). With one animal only the per-animal panel is drawn. Returns the per-animal table.
+    """
+    desc = pfl.TASK_DESCRIPTION.get(task, '')
+    print(f'==== {task} ====   {desc}')
+    if not len(Xt):
+        print('  no usable sessions for this task in the selection\n'); return pd.DataFrame()
+    A = by_animal_pooled(Xt, sidx)
+    for _, r in A.iterrows():                                   # per animal, first
+        B = sidx.blocks_of(Xt[Xt.mouse == r.mouse], size=None)
+        pooled_criterion(B, title=f'{r.mouse} - {task}')
+        if np.isfinite(r.get('p_opportunity', np.nan)):
+            print(f'  {r.mouse}: pooled {int(r.pos)}/{int(r.pos + r.neg)} positive '
+                  f'({r.acc_pooled:.3f}) vs world good:bad {r.good_opportunity_ratio:.3f} '
+                  f'-> D_opportunity {r.D_opportunity:+.3f}, p_opportunity {r.p_opportunity:.3g}')
+        if show:
+            plt.show()
+    if len(A) > 1:                                              # then all animals, grouped per animal
+        grouped_by_animal(A, title=f'{task}: every animal side by side (kept separate)')
+        if show:
+            plt.show()
+    return A
