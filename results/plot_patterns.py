@@ -111,6 +111,35 @@ def session_lines(R, out_path=None, title=''):
     return fig
 
 
+def mouse_summary(X, metrics=None, title=''):
+    """One bar per mouse for the key measures, plus an ALL bar = mean ACROSS mice (equal weight per
+    mouse, error = SEM across mice). This is the "averaged across mice" view: a prolific mouse does
+    NOT dominate, because each mouse is collapsed to its own mean first and those means are averaged.
+    """
+    metrics = metrics or [('D', 'D (visibility)'), ('acc', 'observed accuracy'),
+                          ('conflict_p', 'conflict criterion'), ('drops_per_min', 'reward drops / min')]
+    metrics = [(c, l) for c, l in metrics if c in X.columns]
+    mice = sorted(X.mouse.unique())
+    fig, ax = plt.subplots(1, len(metrics), figsize=(3.6 * len(metrics), 4.3)); ax = np.atleast_1d(ax)
+    for a, (c, lab) in zip(ax, metrics):
+        means = [pd.to_numeric(X.loc[X.mouse == m, c], errors='coerce').mean() for m in mice]
+        a.bar(range(len(mice)), means, color='#4c72b0')
+        gm = np.nanmean(means); sem = np.nanstd(means) / np.sqrt(max(1, len(mice)))   # across mice
+        a.bar(len(mice), gm, color='#c44e52')
+        a.errorbar(len(mice), gm, yerr=sem, fmt='none', ecolor='k', capsize=4)
+        a.set_xticks(range(len(mice) + 1))
+        a.set_xticklabels([str(m) for m in mice] + ['ALL\n(mean±SEM\nacross mice)'],
+                          rotation=30, ha='right', fontsize=7)
+        if c == 'D':
+            a.axhline(0, color='k', lw=.8, ls=':')
+        elif c in ('conflict_p', 'acc'):
+            a.axhline(.5, color='k', lw=.8, ls=':')
+        a.set_title(lab, fontweight='bold', fontsize=9); a.grid(alpha=.2, axis='y')
+    fig.suptitle(title or 'Per mouse, then averaged across mice (equal weight per mouse)',
+                 fontweight='bold', fontsize=12)
+    plt.tight_layout(); return fig
+
+
 def half_split(C, R=None, out_path=None):
     """FIRST vs SECOND half, two ways. `C` = the df_log collections table for ONE animal.
 

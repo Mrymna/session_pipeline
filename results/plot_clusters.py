@@ -25,6 +25,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'common'))
 CLUSTER_COLORS = {'Direct': '#27ae60', 'Corner-dwelling': '#c0392b', 'Exploratory': '#9b59b6'}
 _NON_CLUSTER = {'excluded', 'unclustered', 'timeout', 'nan', ''}          # not real path groups
 
+# same on-screen icon style as task_banish_multiplier/make_trial_report.ICON_STYLE
+ICON_STYLE = {'single_reward': ('*', '#27ae60', 13, 'reward'),
+              'banish': ('X', '#c0392b', 9, 'banish'),
+              'unbanish': ('o', '#2980b9', 8, 'unbanish ring')}
+
 
 def clustered(T):
     """The trials that carry a real path cluster (drop escape/degenerate/unclustered rows)."""
@@ -80,40 +85,87 @@ def cluster_overview(C, title=''):
 
 
 def cluster_scatter(C, title=''):
-    """The clustering in 2-D: the stored PCA view, and the raw efficiency-vs-corner feature plane."""
-    names = _order(list(C.cluster_name.unique()))
-    has_pca = {'cluster_pca1', 'cluster_pca2'} <= set(C.columns) and C.cluster_pca1.notna().any()
-    has_feat = {'path_efficiency', 'time_in_corner'} <= set(C.columns)
-    panels = [p for p, ok in [('pca', has_pca), ('feat', has_feat)] if ok] or ['feat']
-    fig, ax = plt.subplots(1, len(panels), figsize=(6 * len(panels), 5)); ax = np.atleast_1d(ax)
+    """The clusters in REAL feature units -- NOT the stored PCA.
 
-    for a, p in zip(ax, panels):
+    Clustering is done per SESSION, so `cluster_pca1/2` live in each session's own PCA basis; once
+    sessions are pooled those coordinates are no longer comparable and the scatter looks like one
+    unseparable blob. The raw path-geometry features (efficiency, time in corner, trial length) are
+    in the same physical units across every session, so THOSE are what show the separation. Direct
+    sits high-efficiency / low-corner / short; Corner-dwelling the opposite.
+    """
+    names = _order(list(C.cluster_name.unique()))
+    planes = [('time_in_corner', 'path_efficiency', 'time in corner', 'path efficiency'),
+              ('dur_s', 'path_efficiency', 'trial length (s)', 'path efficiency')]
+    planes = [p for p in planes if p[0] in C.columns and p[1] in C.columns]
+    if not planes:
+        fig, a = plt.subplots(figsize=(6, 2)); a.axis('off')
+        a.text(.5, .5, 'no path-geometry feature columns to plot', ha='center'); return fig
+    fig, ax = plt.subplots(1, len(planes), figsize=(6 * len(planes), 5)); ax = np.atleast_1d(ax)
+    for a, (cx, cy, lx, ly) in zip(ax, planes):
         for i, n in enumerate(names):
             g = C[C.cluster_name == n]
-            if p == 'pca':
-                a.scatter(g.cluster_pca1, g.cluster_pca2, s=22, alpha=.7, color=_col(n, i), label=n)
-                a.set_xlabel('PCA 1'); a.set_ylabel('PCA 2')
-                a.set_title('cluster space (PCA of the 4 features)', fontweight='bold')
-            else:
-                a.scatter(g.time_in_corner, g.path_efficiency, s=22, alpha=.7, color=_col(n, i), label=n)
-                a.set_xlabel('time in corner'); a.set_ylabel('path efficiency')
-                a.set_title('efficiency vs corner-dwelling', fontweight='bold')
-        a.legend(fontsize=8); a.grid(alpha=.2)
-    fig.suptitle(title or 'Path clusters in 2-D', fontweight='bold', fontsize=12)
+            a.scatter(pd.to_numeric(g[cx], errors='coerce'), pd.to_numeric(g[cy], errors='coerce'),
+                      s=22, alpha=.65, color=_col(n, i), label=n)
+        if cx == 'dur_s':
+            a.set_xscale('log')
+        a.set_xlabel(lx); a.set_ylabel(ly); a.legend(fontsize=8); a.grid(alpha=.2)
+        a.set_title(f'{ly} vs {lx}', fontweight='bold')
+    fig.suptitle(title or 'Path clusters in real feature units (they separate on efficiency)',
+                 fontweight='bold', fontsize=12)
     plt.tight_layout(); return fig
 
 
-def example_paths(C, n=5, seed=0, title=''):
-    """A few real TRAJECTORIES per cluster -- the point of the whole split. Each path is plasma-coded
-    from trial start (dark) to the collection (bright); the world box is autoscaled from the coords."""
+def _turn_arrows(x, y, t, min_turn_deg=30, min_gap_s=0.3):
+    """Facing arrows at direction changes >= min_turn_deg, from the PATH's own velocity direction
+    (df_trials has no per-frame theta) -- a close visual proxy for the trial report's avatar-facing
+    arrows. Returns x, y, u, v, and time-from-collection for plasma colouring."""
+    if len(x) < 3:
+        return (np.array([]),) * 5
+    from scipy.ndimage import gaussian_filter1d
+    xs = gaussian_filter1d(x, 1.5); ys = gaussian_filter1d(y, 1.5)
+    ang = np.unwrap(np.arctan2(np.gradient(ys), np.gradient(xs)))
+    keep, anchor, last_t = [0], ang[0], t[0]
+    for i in range(1, len(x)):
+        if abs(ang[i] - anchor) >= np.radians(min_turn_deg) and (t[i] - last_t) >= min_gap_s * 1000:
+            keep.append(i); anchor = ang[i]; last_t = t[i]
+    keep = np.array(keep); a = ang[keep]
+    return x[keep], y[keep], np.cos(a), np.sin(a), (t[keep] - t[-1]) / 1000.0
+
+
+def example_paths(C, n=5, seed=0, wh=None, title=''):
+    """A few real TRAJECTORIES per cluster, drawn in the SAME style as the JPAS_0168 trial_report.pdf
+    path panel (log-available parts only): arena box, plasma trajectory dark=start -> bright=collection,
+    facing arrows at direction changes, and the full on-screen ICON landscape with the collected icon
+    ringed (* reward / X banish / o unbanish). Two rows are kept: Direct vs Corner-dwelling.
+
+    Not shown (video-derived, absent from df_trials): licking dots. Facing arrows use the path's own
+    velocity direction rather than the logged avatar theta.
+    """
+    from matplotlib.collections import LineCollection
+    from matplotlib.patches import Rectangle
     names = _order(list(C.cluster_name.unique()))
-    has_xy = {'coord_x', 'coord_y'} <= set(C.columns)
-    if not has_xy:
+    if not ({'coord_x', 'coord_y'} <= set(C.columns)):
         fig, a = plt.subplots(figsize=(6, 2)); a.axis('off')
         a.text(.5, .5, 'no coord_x/coord_y arrays in df_trials -- cannot draw trajectories',
                ha='center'); return fig
+
+    if wh is None:                                       # consistent world box across all panels
+        mx = my = 0.0
+        for _, r in C.iterrows():
+            xx = np.asarray(r.coord_x, float); yy = np.asarray(r.coord_y, float)
+            if len(xx):
+                mx = max(mx, np.nanmax(xx)); my = max(my, np.nanmax(yy))
+            for ic in (r.get('icons') or []):
+                if isinstance(ic, dict) and ic.get('x') is not None and np.isfinite(ic['x']):
+                    mx = max(mx, ic['x']); my = max(my, ic['y'])
+        W = int(np.ceil((mx or 2400) / 100) * 100); H = int(np.ceil((my or 2400) / 100) * 100)
+    else:
+        W, H = wh
+
     rng = np.random.default_rng(seed)
-    fig, ax = plt.subplots(len(names), n, figsize=(2.5 * n, 2.6 * len(names)), squeeze=False)
+    fig, ax = plt.subplots(len(names), n, figsize=(2.8 * n, 2.9 * len(names)),
+                           squeeze=False, constrained_layout=True)
+    lc_last = None
     for r, name in enumerate(names):
         g = C[C.cluster_name == name]
         take = g.sample(min(n, len(g)), random_state=int(rng.integers(1e9))) if len(g) else g
@@ -122,21 +174,48 @@ def example_paths(C, n=5, seed=0, title=''):
             if c >= len(take):
                 a.axis('off'); continue
             row = take.iloc[c]
-            xx = np.asarray(row.coord_x, float); yy = np.asarray(row.coord_y, float)
-            ok = np.isfinite(xx) & np.isfinite(yy)
-            xx, yy = xx[ok], yy[ok]
-            if len(xx) > 1:
-                a.scatter(xx, yy, c=np.arange(len(xx)), cmap='plasma', s=6)
-                a.plot(xx[0], yy[0], 'o', color='k', ms=5)              # start
-                a.plot(xx[-1], yy[-1], '*', color=_col(name, r), ms=12)  # collection
-            a.set_aspect('equal', 'datalim'); a.invert_yaxis()
+            a.add_patch(Rectangle((0, 0), W, H, fill=False, ec='0.5', lw=1))
+            x = np.asarray(row.coord_x, float); y = np.asarray(row.coord_y, float)
+            t = np.asarray(row.get('coord_t_ms', np.arange(len(x))), float)
+            ok = np.isfinite(x) & np.isfinite(y)
+            x, y, t = x[ok], y[ok], t[ok]
+            if len(x) > 1:
+                pts = np.array([x, y]).T.reshape(-1, 1, 2)
+                segs = np.concatenate([pts[:-1], pts[1:]], axis=1)
+                lc = LineCollection(segs, cmap='plasma', lw=2, zorder=3)
+                lc.set_array((t[:-1] - t[-1]) / 1000.0); a.add_collection(lc); lc_last = lc
+                gx, gy, u, v, gt = _turn_arrows(x, y, t)
+                if len(gx):
+                    a.quiver(gx, gy, u, v, gt, cmap='plasma', zorder=6, pivot='tail', scale=14,
+                             width=0.013, headwidth=4, headlength=5, edgecolor='k', linewidth=0.4)
+                    a.plot(gx, gy, 'o', mfc='w', mec='k', ms=2.6, mew=0.5, zorder=6.5)
+                a.plot(x[0], y[0], 'o', mfc='k', mec='w', ms=7, mew=1, zorder=12)     # start
+            locs = [ic.get('loc') for ic in (row.get('icons') or []) if isinstance(ic, dict)]
+            for ic in (row.get('icons') or []):                                       # icon landscape
+                if not isinstance(ic, dict):
+                    continue
+                eff, ox, oy = ic.get('effect'), ic.get('x'), ic.get('y')
+                if eff not in ICON_STYLE or ox is None or oy is None or not np.isfinite(ox):
+                    continue
+                mk, col, msz, _ = ICON_STYLE[eff]
+                a.plot(ox, oy, mk, mfc=col if mk != 'o' else 'none', mec='k', ms=msz, mew=1.2, zorder=5)
+                if ic.get('loc') == row.get('target_loc'):                            # ring the collected
+                    a.plot(ox, oy, 'o', mfc='none', mec='k', ms=msz + 5, mew=1.5, zorder=6)
+            if (row.get('target_loc') not in locs                                     # fallback ring
+                    and np.isfinite(row.get('target_x', np.nan))):
+                a.plot(row.target_x, row.target_y, 'o', mfc='none', mec='k', ms=14, mew=1.5, zorder=6)
+            M = 160; a.set_xlim(-M, W + M); a.set_ylim(H + M, -M); a.set_aspect('equal')
             eff = row.get('path_efficiency', np.nan)
             a.set_title(f'{row.get("outcome", "")}  eff={eff:.2f}' if np.isfinite(eff)
                         else str(row.get('outcome', '')), fontsize=7)
-        ax[r][0].set_ylabel(name, color=_col(name, r), fontweight='bold', fontsize=10)
-    fig.suptitle(title or 'Example trajectories per cluster  (black o = start, star = collection)',
+        ax[r][0].set_ylabel(name, color=_col(name, r), fontweight='bold', fontsize=11)
+    if lc_last is not None:
+        cb = fig.colorbar(lc_last, ax=ax, location='right', fraction=0.03, pad=0.01, aspect=40)
+        cb.set_label('time from collection (s)  dark=start -> bright=t0', fontsize=8)
+    fig.suptitle(title or 'Example trajectories per cluster  '
+                 '(o start, arrows=facing at turns; * reward / X banish / o unbanish, ringed=collected)',
                  fontweight='bold', fontsize=12)
-    plt.tight_layout(); return fig
+    return fig
 
 
 def cluster_composition(C, by='outcome', title=''):
