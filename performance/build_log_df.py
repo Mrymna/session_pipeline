@@ -195,7 +195,9 @@ def session_row(row, T):
         has_multiplier=pfl.log_has_multiplier(log),
         n_trials_total=len(T),
         n_analyzable=int(T['analyze'].sum()) if 'analyze' in T else np.nan,
-        wall_min=(coords[-1, 0] - coords[0, 0]) / 60000.0 if len(coords) > 1 else np.nan,
+        # elapsed_min: real clock minutes start->end. This coord-based value is the fallback for
+        # UNSCORABLE sessions; score_log() overwrites it below with the first-trial->last-trial span.
+        elapsed_min=(coords[-1, 0] - coords[0, 0]) / 60000.0 if len(coords) > 1 else np.nan,
         weight_g=ed.get('weight (g)', np.nan),
         weight_baseline_g=ed.get('original weight (g)', np.nan),
         weight_fraction=ed.get('weight_fraction', np.nan))

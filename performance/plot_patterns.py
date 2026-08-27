@@ -91,7 +91,7 @@ def session_lines(R, out_path=None, title=''):
                 fontsize=10, fontweight='bold'); a.grid(alpha=.2)
 
     a = ax[4]
-    a.plot(x, R.wall_min, 'o-', color='#d35400', label='session length (wall min)')
+    a.plot(x, R.elapsed_min, 'o-', color='#d35400', label='session length (elapsed min)')
     a.set_ylabel('minutes'); a.legend(fontsize=8)
     a.set_title('SESSION LENGTH', fontsize=10, fontweight='bold'); a.grid(alpha=.2)
 
@@ -247,10 +247,10 @@ def overview(X, T=None, out_path=None):
     a.tick_params(axis='x', rotation=45, labelsize=7); a.grid(alpha=.2)
 
     a = ax[1, 0]
-    a.bar(range(len(X)), X.wall_min.to_numpy(float), color='#d35400')
+    a.bar(range(len(X)), X.elapsed_min.to_numpy(float), color='#d35400')
     _thin(a, list(X.label))
     a.set_ylabel('minutes')
-    a.set_title('(d) SESSION LENGTH (wall clock)', fontsize=10, fontweight='bold')
+    a.set_title('(d) SESSION LENGTH (elapsed clock)', fontsize=10, fontweight='bold')
     a.grid(alpha=.2, axis='y')
 
     a = ax[1, 1]

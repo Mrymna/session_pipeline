@@ -440,9 +440,12 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
         else FIXED_DROPS.get(r['outcome'], 0)
         for r in rows]))
 
-    wall_min = (rows[-1]['t1'] - rows[0]['t0']) / 60000
+    # elapsed_min = real clock time from the first scored trial to the last (was `wall_min`).
+    # It splits into active_min + freeze_min: active = time the animal could actually move,
+    # freeze = the ~14 s post-timeout blackout when the game ignores the joystick.
+    elapsed_min = (rows[-1]['t1'] - rows[0]['t0']) / 60000
     freeze_min = sum(r['freeze_ms'] for r in rows) / 60000
-    active_min = wall_min - freeze_min
+    active_min = elapsed_min - freeze_min
 
     # --- visibility-weighted chance ---------------------------------------------------------
     vpos = vneg = 0.0      # ZERO-memory: time-weighted fraction on screen
@@ -557,8 +560,8 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
         n_agree=n_agree, agree_p=agree_p,
         chance_exo=chance_exo, D_exo=toD(chance_exo),
         p_exo=binomtest(pos, pos + neg, chance_exo).pvalue if np.isfinite(chance_exo) else np.nan,
-        wall_min=wall_min, active_min=active_min, freeze_min=freeze_min,
-        coll_per_min=pos / wall_min, drops_per_min=drops / wall_min,
+        elapsed_min=elapsed_min, active_min=active_min, freeze_min=freeze_min,
+        coll_per_min=pos / elapsed_min, drops_per_min=drops / elapsed_min,
         coll_per_active_min=pos / max(active_min, 1e-9),
         world_w=w0.get('width'), world_h=w0.get('height'))
 
