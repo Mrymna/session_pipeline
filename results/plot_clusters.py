@@ -218,6 +218,32 @@ def example_paths(C, n=5, seed=0, wh=None, title=''):
     return fig
 
 
+def cluster_share_by_animal(C, title=''):
+    """The 'per animal, then averaged across animals' view. For each animal, the FRACTION of its
+    trials in each cluster (Direct / Corner-dwelling), one group of bars per animal; then an ALL group
+    = the mean ACROSS animals (equal weight per animal, error = SEM across animals), so a prolific
+    animal does not dominate. This is the cluster analogue of notebook 2's mouse_summary: aggregate
+    within an animal first, then average the animals.
+    """
+    names = _order(list(C.cluster_name.unique()))
+    animals = sorted(C.mouse.unique()) if 'mouse' in C.columns else ['all']
+    share = {a: [(C[(C.mouse == a) & (C.cluster_name == n)].shape[0]
+                  / max(1, C[C.mouse == a].shape[0])) for n in names] for a in animals}
+    fig, a = plt.subplots(figsize=(max(7, 1.5 * (len(animals) + 1) + 2), 4.6))
+    xg = np.arange(len(animals) + 1); w = 0.8 / max(1, len(names))
+    for i, n in enumerate(names):
+        vals = [share[a][i] for a in animals]
+        allm = np.nanmean(vals); sem = np.nanstd(vals) / np.sqrt(max(1, len(animals)))
+        a.bar(xg + i * w, vals + [allm], w, color=_col(n, i), label=n)
+        a.errorbar(xg[-1] + i * w, allm, yerr=sem, fmt='none', ecolor='k', capsize=3)
+    a.set_xticks(xg + (len(names) - 1) * w / 2)
+    a.set_xticklabels([str(x) for x in animals] + ['ALL\n(mean±SEM\nacross animals)'],
+                      rotation=25, ha='right', fontsize=8)
+    a.set_ylabel('share of trials'); a.set_ylim(0, 1); a.legend(fontsize=8)
+    a.set_title(title or 'Cluster share per animal, then averaged across animals', fontweight='bold')
+    a.grid(alpha=.2, axis='y'); plt.tight_layout(); return fig
+
+
 def cluster_composition(C, by='outcome', title=''):
     """Stacked share of each cluster within each `by` group (outcome / mouse / world)."""
     if by not in C.columns:
