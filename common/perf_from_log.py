@@ -439,6 +439,17 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
             f"{log_path}: no view_scale for {mouse_id!r}. It is a property of the WORLD, is not in "
             f"the log, and differs per session -- pass view_scale=... explicitly. Known: "
             f"{VIEW_SCALE_BY_MOUSE}")
+    # --- THE WORLD VIEW: what the mouse sees, and when an icon is "on screen" ------------------
+    # The game camera follows the avatar: translate(centre); scale(view_scale); translate(-avatar).
+    # So the screen shows a box of  SKETCH / view_scale  WORLD units, centred on the avatar
+    # (SKETCH = 800 x 600 px, the game's canvas). vw, vh are that box in world units:
+    #     vw, vh = 800 / view_scale, 600 / view_scale
+    # An icon counts as ON SCREEN at a sample when its CENTRE is inside the box:
+    #     on_screen = |icon.x - avatar.x| <= vw/2  AND  |icon.y - avatar.y| <= vh/2   (see below)
+    # Worked example:  view_scale 0.56 -> 1428.6 x 1071.4 wu (JPAS_0231, 2000x2000 world)
+    #                  view_scale 0.35 -> 2285.7 x 1714.3 wu (JPAS_0168, 2400x2400 world)
+    # Only the RATIO SKETCH/view_scale is physically pinned (validated against ui.mp4 for 0231);
+    # 800x600 is the game's sketch size and view_scale carries the per-world zoom.
     vw, vh = SKETCH_W / view_scale, SKETCH_H / view_scale
 
     w0 = log['worlds'][0] if isinstance(log['worlds'], list) else log['worlds']

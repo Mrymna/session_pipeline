@@ -24,6 +24,19 @@ labels use coords + icons), so they run here as well and their columns land in `
 *** WHAT IS NOT HERE. *** Anything needing the video: pupil, blink, whisker, lick, groom, saccade,
 per-ROI flow. Those join onto `df_trials` later via `start_frame`/`end_frame`.
 
+*** HOW "ON SCREEN" IS DECIDED (used by the visibility-weighted `chance` columns). ***
+The performance columns come from `common/perf_from_log.py` -> `score_log()`, which models THE WORLD
+VIEW exactly as the game camera does: it follows the avatar, so the screen is a box of
+`SKETCH / view_scale` WORLD units centred on the avatar, with SKETCH = 800 x 600 px (the game's
+canvas). vw, vh = 800 / view_scale, 600 / view_scale; an icon is ON SCREEN at a sample when its
+CENTRE is inside the box, `|icon.x - avatar.x| <= vw/2 AND |icon.y - avatar.y| <= vh/2`.
+    view_scale 0.35 -> 2285.7 x 1714.3 wu (JPAS_0168, 2400x2400 world)
+    view_scale 0.56 -> 1428.6 x 1071.4 wu (JPAS_0231, 2000x2000 world)
+`view_scale` is a property of the WORLD, is NOT in the log, and must be supplied per session (see
+`common/viewport.py`); only the RATIO SKETCH/view_scale is physically pinned (validated vs ui.mp4).
+Caveat: it is CENTRE-inside (an icon is counted only once its centre enters the box), so it slightly
+UNDER-counts partially-visible icons -- see the notebook glossary.
+
     from build_log_df import build_all, save, load
     df_sessions, df_trials = build_all(MAIN_DIR)
     save(df_sessions, OUT / 'df_sessions.pkl'); save(df_trials, OUT / 'df_trials.pkl')
