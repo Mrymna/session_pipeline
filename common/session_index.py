@@ -861,10 +861,15 @@ def week_blocks(R, full_week=5, fallback_size=5):
 
     rows, buf = [], []                               # buf = list of single-session rows (DataFrames)
 
+    def _md(x):                                      # 'YYYY-MM-DD' -> 'MM-DD' (full date overlaps on the axis)
+        x = str(x)
+        return x[5:] if len(x) >= 10 and x[4] == '-' else x
+
     def _emit(g, block, partial):
         d = _block_stats(g)
         d['block'] = block
-        rng = f'{g.day.min()} .. {g.day.max()}' if g.day.min() != g.day.max() else f'{g.day.min()}'
+        lo, hi = g.day.min(), g.day.max()
+        rng = f'{_md(lo)} .. {_md(hi)}' if lo != hi else _md(lo)
         d['label'] = rng + (f'\n({len(g)} sess, partial)' if partial else '')
         d['is_week'] = not partial
         rows.append(d)
