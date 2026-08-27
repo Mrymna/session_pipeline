@@ -23,7 +23,7 @@ comparable to `analyze_performance.py`):
   - *** THE LEARNING CRITERION *** `conflict_p` = P(positive | BOTH types on screen AND the negative
     one was NEARER). These are the trials where proximity and value disagree, so he must override the
     pull of the closer icon. This is the number to track across days: it must RISE if he is learning
-    to avoid the hazard, while `agree_p` (the control) stays high. ~15 such trials per session, so
+    to avoid the punishment, while `agree_p` (the control) stays high. ~15 such trials per session, so
     pool ~3 sessions per block -- one session alone gives a +-0.25 interval.
   - throughput (collections/min, drops/min) and, for the timeout task, ACTIVE minutes with the
     ~14 s post-timeout coord blackout removed
@@ -54,7 +54,7 @@ SKETCH_W, SKETCH_H = 800, 600
 # makes any combination score correctly, including combinations nobody has run yet.
 POSITIVE_EFFECTS = {'single_reward', 'double_reward'}
 NEGATIVE_EFFECTS = {'timeout', 'banish'}
-NEUTRAL_EFFECTS = {'unbanish'}          # escape: a collection, but pays nothing and is not a hazard
+NEUTRAL_EFFECTS = {'unbanish'}          # escape: a collection, but pays nothing and is not a punishment
 # fixed drops per collection, where the effect pays a fixed amount. `single_reward` is absent on
 # purpose: in the banishment task it pays the streak MULTIPLIER, which is read per collection.
 FIXED_DROPS = {'single_reward': 1, 'double_reward': 2, 'timeout': 0, 'banish': 0, 'unbanish': 0}
@@ -172,7 +172,7 @@ def log_effects(log):
     effects {single_reward}, matches no signature, and is labelled 'unknown' -- so it is dropped
     from the group. That is backwards (the protocol is a property of the session, not of the
     outcome) and it biases the sample in the worst possible direction, removing exactly the
-    sessions where the animal avoided the hazard most successfully.
+    sessions where the animal avoided the punishment most successfully.
 
     The spawn stream records every icon ever put on the board, so it carries the full vocabulary
     whether or not he touched each type.
@@ -542,7 +542,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
     # On the trials where BOTH types were on screen together, split by which was NEARER at that
     # first joint moment. The CONFLICT trials (negative icon closer) are where he has to override
     # proximity, so P(positive | conflict) is the number that must RISE if he learns to avoid the
-    # hazard. The agree-trials are the CONTROL: if BOTH columns move he has just stopped following
+    # punishment. The agree-trials are the CONTROL: if BOTH columns move he has just stopped following
     # proximity, which is not the same as recognising the icon.
     n_conf = k_conf = n_agree = k_agree = 0
     for r in rows:

@@ -7,7 +7,7 @@ on his screen and the types are not on screen equally often. Scoring against the
 icon count would credit him with discrimination he has not shown.
 
     DISCRIMINATION SCORE   D = (observed - chance) / (1 - chance)
-        0 = collecting in proportion to what is on screen, 1 = perfect avoidance of the hazard.
+        0 = collecting in proportion to what is on screen, 1 = perfect avoidance of the timeout.
 
 TWO THINGS DIFFER FROM THE BANISH TASK
 --------------------------------------
@@ -129,14 +129,14 @@ def run(session_dir, write=True):
     exo = vp.spawn_geometry_chance(a, log, ts.POSITIVE, ts.NEGATIVE)
     D_exo = (B['acc'] - exo) / (1 - exo)
     p_exo = binomtest(B['pos'], B['pos'] + B['neg'], exo).pvalue
-    print(f"\n  ROBUSTNESS -- the visibility baseline is ENDOGENOUS (steering away from the hazard")
+    print(f"\n  ROBUSTNESS -- the visibility baseline is ENDOGENOUS (steering away from the timeout")
     print(f"  makes it visible less often, which the baseline would absorb). Exogenous check, from")
     print(f"  the spawn configuration + his position when the batch appeared:")
     print(f"    nearest-at-spawn is positive {exo:.3f} -> D = {D_exo:+.3f}, p = {p_exo:.3f}")
     print(f"    -> the 'at chance' read {'HOLDS' if p_exo > 0.05 else 'does NOT hold'} under both baselines")
     print(f"\n  DISCRIMINATION: observed {B['acc']:.3f} vs visibility-chance {B['chance']:.3f} "
           f"-> D = {B['D']:+.3f}, binomial p = {B['p']:.3f}")
-    print(f"     {'AT CHANCE - no evidence he avoids the hazard' if B['p'] > 0.05 else 'ABOVE CHANCE - he is avoiding the hazard'}")
+    print(f"     {'AT CHANCE - no evidence he avoids the timeout' if B['p'] > 0.05 else 'ABOVE CHANCE - he is avoiding the timeout'}")
     print(f"     PERFECT-MEMORY bound: chance {B['chance_mem']:.3f} -> D = {B['D_mem']:+.3f}, "
           f"p = {B['p_mem']:.3f}")
     print(f"     => D = {B['D']:+.3f} (zero memory) to {B['D_mem']:+.3f} (perfect memory)")

@@ -8,14 +8,14 @@ What the data says (JPAS_0168, verified before thresholding -- 231 house rule):
     collected-target closest approach is 245+-3 across ALL outcomes). So there is no graded "how
     close did it get" -- a trial either collects (reaches 246) or not.
   - On single_reward trials the mouse stays FAR from banish icons (min dist median ~996, min ~820)
-    => a banish NEAR-MISS essentially never happens; the hazards are well separated. So geometric
+    => a banish NEAR-MISS essentially never happens; the banishments are well separated. So geometric
     "near-miss to a banish" flags ~0 trials and is NOT used.
   - OVERSHOOT of the collected target (approach<400 -> retreat>700 -> return) flags only ~4/43
     single_reward trials and the set is threshold-unstable => recorded for transparency but too
     sparse to stratify on.
 
 Therefore:
-  - the DISCRETE error = `banish` (hit the hazard, n=17); correct = single_reward.
+  - the DISCRETE error = `banish` (hit the banishment, n=17); correct = single_reward.
   - the well-powered CONFLICT / difficulty stratifier = the Corner-dwelling path cluster (n=47),
     which is low-efficiency, long, corner-dwelling, negative heading alignment.
   - H1's post-error test (prev trial = banish, n<=17) is complemented by a better-powered

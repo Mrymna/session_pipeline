@@ -283,7 +283,7 @@ def pooled_criterion(B, out_path=None, title=''):
     """The criterion with EVERY session of a world pooled into one block (blocks_of(size=None)).
 
     The un-binned answer, which is the one to read first. `B` is a one-row blocks table; the panel
-    shows CONFLICT (hazard was nearer -- he must override proximity) against CONTROL (reward was
+    shows CONFLICT (the punishment was nearer -- he must override proximity) against CONTROL (reward was
     nearer -- the easy case), with Wilson intervals. The two must SEPARATE for the animal to be
     recognising the icon: if both move together he has merely stopped following proximity.
     """
@@ -292,7 +292,7 @@ def pooled_criterion(B, out_path=None, title=''):
     for i, (k, lo, hi, lbl, col) in enumerate((
             ('control_p', 'control_lo', 'control_hi', 'CONTROL\nreward nearer (easy)', '#7f8c8d'),
             ('conflict_p', 'conflict_lo', 'conflict_hi',
-             'CONFLICT\nhazard nearer (must override)', '#e67e22'))):
+             'CONFLICT\npunishment nearer (must override)', '#e67e22'))):
         a.bar(i, r[k], color=col, width=.55)
         a.errorbar(i, r[k], yerr=[[r[k] - r[lo]], [r[hi] - r[k]]], fmt='none',
                    ecolor='k', capsize=6, lw=1.6)
@@ -301,7 +301,7 @@ def pooled_criterion(B, out_path=None, title=''):
         a.text(i, 0.03, f'{r[k]:.3f}\n{kk}/{n}', ha='center', color='w', fontweight='bold')
         a.set_xticks([0, 1])
     a.set_xticklabels(['CONTROL\nreward nearer (easy)',
-                       'CONFLICT\nhazard nearer (must override)'], fontsize=9)
+                       'CONFLICT\npunishment nearer (must override)'], fontsize=9)
     a.axhline(0.5, ls=':', color='k', lw=1)
     a.set_ylim(0, 1); a.set_ylabel('P(collected the reward)')
     a.set_title((title or 'THE CRITERION, all sessions pooled') +

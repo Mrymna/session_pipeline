@@ -19,7 +19,7 @@ Three pages:
      not by anything he does afterwards.
   C  IS THERE AN AVOIDANCE SIGNATURE? -- a behavioural test that does not depend on the final
      choice: did he approach the banishment and veer off? Closest approach is reported too, but with
-     its confound stated (staying far from the hazard is what you get for free by going somewhere
+     its confound stated (staying far from the punishment is what you get for free by going somewhere
      else, so distance alone is not avoidance).
 
 Task-agnostic: pass the positive/negative effect names.
@@ -201,7 +201,7 @@ def figure_decision(res, pos_label='reward', neg_label='banishment'):
     # McNemar on the two DISCORDANT cells (he broke the nearest-rule toward the positive icon
     # vs toward the negative one), not a binomial of `obs` against `base` held fixed.
     n_bp = int((D.got & ~D.nearer_pos).sum())   # took POS while NEG was nearer  -> overrode toward reward
-    n_bn = int((~D.got & D.nearer_pos).sum())   # took NEG while POS was nearer  -> overrode toward hazard
+    n_bn = int((~D.got & D.nearer_pos).sum())   # took NEG while POS was nearer  -> overrode toward punishment
     p = binomtest(n_bp, n_bp + n_bn, 0.5).pvalue if (n_bp + n_bn) else np.nan
     lo, hi = _wilson(int(D.got.sum()), n)
     blo, bhi = _wilson(int(D.nearer_pos.sum()), n)

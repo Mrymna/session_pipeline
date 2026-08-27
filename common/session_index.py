@@ -304,7 +304,7 @@ def discover(root, view_scales=None, pattern='*', task=None, progress=True):
         rec['n_collected'] = len(collected)
         # what he COLLECTED (behaviour) vs what the protocol OFFERED (the board). The task is
         # classified from the board -- see pfl.log_effects for why using behaviour drops exactly
-        # the sessions where the animal avoided the hazard.
+        # the sessions where the animal avoided the punishment.
         effects = sorted({c.get('effect') for c in collected if c.get('effect')})
         offered = sorted(pfl.log_effects(L))
         rec['effects'] = '+'.join(effects)

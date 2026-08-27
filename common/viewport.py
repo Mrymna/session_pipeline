@@ -54,7 +54,7 @@ def spawn_geometry_chance(sub, log, positive, negative):
     """SECOND, EXOGENOUS chance baseline: at each trial's START, which icon is NEAREST the avatar?
 
     Why this exists. The visibility-weighted baseline is ENDOGENOUS -- if the animal steers away
-    from the hazard, the hazard is on screen less BECAUSE of that skill, so the baseline can absorb
+    from the punishment, the punishment is on screen less BECAUSE of that skill, so the baseline can absorb
     the very thing we are trying to measure. This one is computed from the spawn configuration and
     the avatar's position at the moment the batch appears, before he has acted on it, so his
     behaviour cannot move it. It is cruder (it assumes proximity-driven choice, and these animals

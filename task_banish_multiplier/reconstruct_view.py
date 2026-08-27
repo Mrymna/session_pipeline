@@ -82,7 +82,7 @@ BACKGROUND = {'NORMAL': 'worldLowContrastLowSaturationRed.png',
 # gem), NOT circles.png (a flat dotted disc) -- confirmed 2026-08-18. Do not "correct"
 # this back to circles.png by matching the log string. banish/unbanish do match their log names.
 ICON_TEX = {'single_reward': 'circles2.png',    # GREEN  reward  (log calls it "circles")
-            'banish': 'fountains.png',          # BLUE   hazard -> throws him into the shadow realm
+            'banish': 'fountains.png',          # BLUE   banishment -> throws him into the shadow realm
             'unbanish': 'ring.png'}             # TEAL   escape portal, only in the shadow realm
 
 

@@ -139,7 +139,7 @@ def run(dirs, out_dir=None):
                  'so no box plot)', fontsize=10.5, fontweight='bold')
     a0.text(0.02, 0.95, 'above 0 = discriminating', transform=a0.transAxes, fontsize=8,
             color='#27ae60', va='top')
-    a0.text(0.02, 0.05, 'below 0 = drawn to the hazard', transform=a0.transAxes, fontsize=8,
+    a0.text(0.02, 0.05, 'below 0 = drawn to the banishment', transform=a0.transAxes, fontsize=8,
             color='#c0392b', va='bottom')
     a0.grid(alpha=0.2)
 

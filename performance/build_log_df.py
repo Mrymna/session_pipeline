@@ -66,7 +66,7 @@ ID_COLS = ['session', 'mouse', 'day', 'time', 'task', 'task_stable', 'task_seq',
 _ID_SOURCE = {'world_sig': 'world'}     # identity column -> the discover-table column it comes from
 
 VALENCE = {'single_reward': +1, 'double_reward': +1, 'timeout': -1, 'banish': -1, 'unbanish': 0}
-# `unbanish` is NEUTRAL: an escape is a collection but pays nothing and is not a hazard hit, so
+# `unbanish` is NEUTRAL: an escape is a collection but pays nothing and is not a punishment hit, so
 # counting it either way corrupts the hit rate. Reward drops: the streak multiplier where the task
 # has one, else the effect's fixed pay.
 FIXED_DROPS = {'single_reward': 1, 'double_reward': 2, 'timeout': 0, 'banish': 0, 'unbanish': 0}
