@@ -81,7 +81,7 @@ def session_lines(R, out_path=None, title=''):
     a.plot(x, R.coll_per_min, 'o-', color='#2980b9', label='collections / min')
     a.plot(x, R.drops_per_min, 's-', color='#8e44ad', label='reward drops / min')
     a.set_ylabel('per minute'); a.legend(fontsize=8)
-    a.set_title('THROUGHPUT -- how often he scored vs how much he was paid',
+    a.set_title('THROUGHPUT -- how OFTEN he collected a reward vs how MUCH reward he earned (drops)',
                 fontsize=10, fontweight='bold'); a.grid(alpha=.2)
 
     a = ax[3]

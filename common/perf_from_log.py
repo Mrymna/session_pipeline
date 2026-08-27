@@ -344,7 +344,7 @@ def log_has_multiplier(log):
     """Does this session carry the reward STREAK MULTIPLIER?
 
     The distinguishing fact between the two timeout protocols: the current task pays a multiplier,
-    the old JPAS_0231 one paid a fixed 1 or 2 and never logged the field.
+    the old JPAS_0231 one delivered a fixed 1 or 2 and never logged the field.
     """
     return any(c.get('multiplier') is not None for c in (log.get('collected') or []))
 
@@ -488,7 +488,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
     neg = sum(r['outcome'] in neg_set for r in rows)
     # per collection: the streak multiplier where one was logged, else the effect's fixed pay.
     # Chosen per ROW rather than per task so a mixed protocol (multiplier rewards alongside
-    # timeouts) is paid correctly instead of falling into one task's rule.
+    # timeouts) is counted correctly instead of falling into one task's rule.
     drops = int(np.nansum([
         r['mult'] if (r['outcome'] == 'single_reward' and r.get('mult') is not None
                       and not (isinstance(r['mult'], float) and np.isnan(r['mult'])))

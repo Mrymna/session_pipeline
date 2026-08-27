@@ -792,21 +792,103 @@ def blocks_of(R, size=None):
     size = max(1, int(size))
     for b0 in range(0, len(R), size):
         g = R.iloc[b0:b0 + size]
-        kc, nc = int(g.k_conflict.sum()), int(g.n_conflict.sum())
-        ka, na = int((g.agree_p * g.n_agree).round().sum()), int(g.n_agree.sum())
-        clo, chi = pfl._wilson(kc, nc)
-        alo, ahi = pfl._wilson(ka, na)
-        rows.append(dict(
-            block='all' if size >= len(R) else f'{b0 // size + 1}',
-            label=(f'ALL {len(g)} sessions\n{g.label.iloc[0]} .. {g.label.iloc[-1]}'
-                   if size >= len(R) else f'{g.label.iloc[0]}\n..{g.label.iloc[-1]}'),
-            n_sessions=len(g),
-            k_conflict=kc, n_conflict=nc, conflict_p=kc / nc if nc else np.nan,
-            conflict_lo=clo, conflict_hi=chi,
-            k_control=ka, n_control=na, control_p=ka / na if na else np.nan,
-            control_lo=alo, control_hi=ahi,
-            D=g.D.mean(), acc=g.acc.mean()))
+        d = _block_stats(g)
+        d['block'] = 'all' if size >= len(R) else f'{b0 // size + 1}'
+        d['label'] = (f'ALL {len(g)} sessions\n{g.label.iloc[0]} .. {g.label.iloc[-1]}'
+                      if size >= len(R) else f'{g.label.iloc[0]}\n..{g.label.iloc[-1]}')
+        rows.append(d)
     return pd.DataFrame(rows)
+
+
+def _block_stats(g):
+    """Pooled conflict/control criterion + the pooled STOCHASTIC (world-design) baseline for one
+    group of sessions. Used by both blocks_of (fixed session count) and week_blocks (calendar week).
+
+    The stochastic p is POOLED, not averaged: p-values do not average, so pos/neg are summed across
+    the block and one binomial test is run against the world's good:bad ratio. This is what lets the
+    opportunity p be read next to D / conflict_p / control_p block by block.
+    """
+    kc, nc = int(g.k_conflict.sum()), int(g.n_conflict.sum())
+    ka, na = int((g.agree_p * g.n_agree).round().sum()), int(g.n_agree.sum())
+    clo, chi = pfl._wilson(kc, nc)
+    alo, ahi = pfl._wilson(ka, na)
+    d = dict(n_sessions=len(g),
+             k_conflict=kc, n_conflict=nc, conflict_p=kc / nc if nc else np.nan,
+             conflict_lo=clo, conflict_hi=chi,
+             k_control=ka, n_control=na, control_p=ka / na if na else np.nan,
+             control_lo=alo, control_hi=ahi,
+             D=g.D.mean(), acc=g.acc.mean())
+    if {'pos', 'neg', 'good_opportunity_ratio'} <= set(g.columns):
+        pos, neg = int(g.pos.sum()), int(g.neg.sum())
+        ratio = (float(g.good_opportunity_ratio.dropna().mean())
+                 if g.good_opportunity_ratio.notna().any() else np.nan)
+        accp = pos / (pos + neg) if (pos + neg) else np.nan
+        d.update(pos=pos, neg=neg, good_opportunity_ratio=ratio, acc_pooled=accp)
+        if np.isfinite(ratio) and (pos + neg) > 0 and ratio < 1:
+            from scipy.stats import binomtest
+            d['p_opportunity'] = binomtest(pos, pos + neg, ratio, alternative='greater').pvalue
+            d['D_opportunity'] = (accp - ratio) / (1 - ratio)
+        else:
+            d['p_opportunity'] = d['D_opportunity'] = np.nan
+    return d
+
+
+def week_blocks(R, full_week=5, fallback_size=5):
+    """Pool sessions by ISO CALENDAR WEEK (Mon-Sun), falling back to consecutive sessions.
+
+    Each block is one week of training, labelled by the dates of the sessions in it (e.g.
+    `2026-08-24 .. 2026-08-28`), so a block is "the week of the 24th-28th" rather than "sessions
+    6-10". The week comes from the `day` column (the session date).
+
+    *** WHEN A WEEK IS INCOMPLETE, fall back to `fallback_size` consecutive sessions. ***
+    A week with at least `full_week` sessions stands on its own. Weeks with fewer (a couple of
+    scattered days, a holiday-shortened week) carry too little data to read as a block, so
+    consecutive incomplete-week sessions are pooled in chronological order into blocks of about
+    `fallback_size` (default 5, a working week). So full weeks keep their calendar identity and
+    sparse stretches are grouped by count instead of leaving tiny one- or two-session blocks.
+
+    Same pooled criterion + stochastic baseline as blocks_of (via `_block_stats`).
+    """
+    if 'task' in R.columns and R.task.nunique() > 1:
+        raise ValueError(
+            f'these sessions span {R.task.nunique()} protocols ({sorted(R.task.unique())}) -- '
+            f'{pfl.NEVER_POOL}. Select one first.')
+    R = R.sort_values(['day', 'time'] if 'time' in R.columns else 'day').copy()
+    iso = pd.to_datetime(R['day'], errors='coerce').dt.isocalendar()
+    R['_wkkey'] = [f'{int(y)}-W{int(w):02d}' if np.isfinite(y) else 'NA'
+                   for y, w in zip(iso['year'], iso['week'])]
+    n_per_week = R['_wkkey'].value_counts()
+
+    rows, buf = [], []                               # buf = list of single-session rows (DataFrames)
+
+    def _emit(g, block, partial):
+        d = _block_stats(g)
+        d['block'] = block
+        rng = f'{g.day.min()} .. {g.day.max()}' if g.day.min() != g.day.max() else f'{g.day.min()}'
+        d['label'] = rng + (f'\n({len(g)} sess, partial)' if partial else '')
+        d['is_week'] = not partial
+        rows.append(d)
+
+    def _flush_full():                               # emit full fallback_size chunks from the buffer
+        while len(buf) >= fallback_size:
+            g = pd.concat(buf[:fallback_size]); del buf[:fallback_size]
+            _emit(g, f'{g.day.min()}+{len(g)}s', partial=True)
+
+    def _flush_all():                                # emit whatever is left, even if short
+        if buf:
+            g = pd.concat(buf); buf.clear()
+            _emit(g, f'{g.day.min()}+{len(g)}s', partial=True)
+
+    for wk in dict.fromkeys(R['_wkkey']):            # weeks in chronological order
+        g = R[R['_wkkey'] == wk]
+        if wk != 'NA' and n_per_week[wk] >= full_week:
+            _flush_all()                             # close any partial run before a full week
+            _emit(g, wk, partial=False)
+        else:
+            buf.extend(g.iloc[[i]] for i in range(len(g)))   # add this week's sessions
+            _flush_full()
+    _flush_all()
+    return pd.DataFrame(rows).reset_index(drop=True)
 
 
 def task_protocol(S, verbose=True):

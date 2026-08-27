@@ -303,14 +303,14 @@ def run(session_dir, write=True, return_fig=False):
     a3.bar(xx - 0.18, [blocks[k]['rew_min'] for k in labs], 0.36, color='#27ae60',
            alpha=0.9, label='reward COLLECTIONS / min  (how OFTEN he scored)')
     a3.bar(xx + 0.18, [blocks[k]['units_min'] for k in labs], 0.36, color='#f39c12',
-           alpha=0.9, label='reward DROPS / min  (how MUCH he was paid)')
+           alpha=0.9, label='reward DROPS / min  (how MUCH reward he earned)')
     for i, k in enumerate(labs):
         a3.text(i - 0.18, blocks[k]['rew_min'], f"{blocks[k]['rew_min']:.2f}", ha='center',
                 va='bottom', fontsize=8)
         a3.text(i + 0.18, blocks[k]['units_min'], f"{blocks[k]['units_min']:.2f}", ha='center',
                 va='bottom', fontsize=8)
     a3.set_xticks(xx); a3.set_xticklabels(xlab, fontsize=9); a3.set_ylabel('per minute')
-    a3.set_title('(d)  THROUGHPUT: how OFTEN he scored vs how MUCH he was paid\n'
+    a3.set_title('(d)  THROUGHPUT: how OFTEN he collected a reward vs how MUCH reward he earned (drops)\n'
                  f"{B['pos']} collections -> {B['units']} drops in {B['dur_min']:.0f} min\n"
                  f"(mean {B['units']/B['pos']:.1f} drops each = the streak multiplier)",
                  fontsize=9.5, fontweight='bold')

@@ -12,7 +12,7 @@ i.e. whether the next collection depends on how the recent ones went.
 
 Task relevance: consecutive rewards build the multiplier 1 -> 4 (it resets on a negative outcome),
 so a streak is worth more than the same number of scattered rewards. `analyse()` therefore also
-reports the reward DROPS actually earned versus what the same collections would have paid if they
+reports the reward DROPS actually earned versus what the same collections would have earned if they
 had arrived in a random order.
 
 *** THE NON-CIRCULAR FRAMING MATTERS HERE. *** "Performance vs multiplier" is partly circular,
@@ -211,13 +211,13 @@ def figure(st, mouse_id, pos_label='reward', neg_label='banishment', mult_cap=4)
     a.hist(st['drops_shuffled'], bins=30, color=C_NULL, alpha=0.85,
            label=f"the SAME {st['n_pos']} {pos_label}s + {st['n_neg']} {neg_label}s,\nreshuffled into a random order (2000x)")
     a.axvline(st['drops_earned'], color=C_POS, lw=3,
-              label=f"what HIS order actually paid: {st['drops_earned']}")
+              label=f"what HIS order actually earned: {st['drops_earned']}")
     a.set_xlabel(f'reward drops earned over the session (multiplier caps at {mult_cap})')
     a.set_ylabel('number of shuffles')
     lost = st['drops_shuffled_mean'] - st['drops_earned']
     a.set_title(f"(d)  did the ORDER of his collections cost him reward?\n"
                 f"same collections, only the order changed. A random order pays "
-                f"{st['drops_shuffled_mean']:.0f} on average;\nhis actual order paid "
+                f"{st['drops_shuffled_mean']:.0f} on average;\nhis actual order earned "
                 f"{st['drops_earned']} -- {'LOST' if lost > 0 else 'GAINED'} {abs(lost):.0f} drops.\n"
                 f"Only {st['drops_pct']*100:.0f}% of random orders would pay this little: his "
                 f"successes are too scattered\nto reach the high multipliers. This is about ORDER "
