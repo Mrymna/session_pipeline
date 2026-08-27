@@ -165,6 +165,19 @@ def session_trials(row, verbose=False):
         T['drops'] = [
             (m if (o == 'single_reward' and pd.notna(m)) else FIXED_DROPS.get(o, 0))
             for o, m in zip(T.outcome, T.get('multiplier', pd.Series([np.nan] * len(T))))]
+    # per-trial world-opportunity, banish_multiplier only (Maryam). Benefits / detriments among THIS
+    # trial's on-screen icons, using the exact effect lists. NAMED board_* on purpose: this is a
+    # DIFFERENT quantity from the session `good_opportunity_ratio`, which is the WORLD DESIGN (from
+    # world['effects']); board_good_ratio is what was actually on the board that trial and so varies
+    # (e.g. the shadow-realm escape board has neither benefit nor detriment -> nan).
+    if row.get('task') == 'banish_multiplier' and 'icons' in T.columns:
+        def _count(ic, S):
+            return sum(1 for e in (ic or []) if isinstance(e, dict) and e.get('effect') in S)
+        bb = [_count(ic, pfl.BENEFIT_EFFECTS) for ic in T['icons']]
+        bd = [_count(ic, pfl.DETRIMENT_EFFECTS) for ic in T['icons']]
+        T['board_benefits'] = bb
+        T['board_detriments'] = bd
+        T['board_good_ratio'] = [b / (b + d) if (b + d) else np.nan for b, d in zip(bb, bd)]
     if 'end_ms' in T:
         T['t_ms'] = T['end_ms']
     T['label'] = row.get('label')

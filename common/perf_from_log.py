@@ -59,6 +59,52 @@ NEUTRAL_EFFECTS = {'unbanish'}          # escape: a collection, but pays nothing
 # purpose: in the banishment task it pays the streak MULTIPLIER, which is read per collection.
 FIXED_DROPS = {'single_reward': 1, 'double_reward': 2, 'timeout': 0, 'banish': 0, 'unbanish': 0}
 
+# BENEFIT / DETRIMENT effect classes for the WORLD-DESIGN "opportunity" baseline.
+# `money` (benefit) and `debt` (detriment) do NOT appear in the current sessions -- they are kept
+# here only so a FUTURE task generation that uses them is counted the same way, with no code change.
+# On today's data they never match, so including them changes nothing.
+BENEFIT_EFFECTS = {'single_reward', 'double_reward', 'money'}
+DETRIMENT_EFFECTS = {'timeout', 'banish', 'debt'}
+
+
+def world_opportunity(log):
+    """(active_benefits, active_detriments, good_opportunity_ratio) from the WORLD's effect defs.
+
+    active_benefits / active_detriments = how many GOOD / BAD icons the world puts on the board
+    (Maryam's exact effect lists: benefits {single_reward, double_reward, money}, detriments
+    {timeout, banish, debt}). Uses the counts the log stores where present (newer sessions log
+    `active_benefits` / `active_detriments`), else counts `world['effects']` by effect name (older
+    logs, e.g. JPAS_0231).
+
+    good_opportunity_ratio = active_benefits / (active_benefits + active_detriments) -- the
+    STOCHASTIC baseline: the hit rate expected if the animal collected icons in proportion to how
+    many good vs bad the world offers, with no discrimination at all. It is the world-DESIGN chance
+    level, a further baseline alongside the visibility-weighted `chance` and the exogenous `chance_exo`.
+
+    NB the log's own `good_ratio` field is the ODDS (benefits / detriments, e.g. 2.0), NOT this
+    probability -- do not use it directly as a chance level.
+    """
+    w = log.get('worlds') or [{}]
+    w = w[0] if isinstance(w, list) else w
+    ab, ad = w.get('active_benefits'), w.get('active_detriments')
+    if ab is None or ad is None:
+        eff = w.get('effects') or []
+        ab = sum(1 for e in eff if isinstance(e, dict) and e.get('effect') in BENEFIT_EFFECTS)
+        ad = sum(1 for e in eff if isinstance(e, dict) and e.get('effect') in DETRIMENT_EFFECTS)
+    ab, ad = int(ab), int(ad)
+    ratio = ab / (ab + ad) if (ab + ad) else np.nan
+    return ab, ad, ratio
+
+
+def prob_at_least(y, x, p):
+    """P(>= y successes in x Bernoulli(p) trials) -- the one-sided binomial upper tail. This is the
+    `prob_at_least_y_in_x` from Maryam's snippet: is he collecting MORE positives than the world's
+    opportunity ratio would give by chance? Returns nan when there are no trials or no ratio."""
+    if x is None or x <= 0 or p is None or not np.isfinite(p):
+        return np.nan
+    from scipy.stats import binomtest
+    return binomtest(int(y), int(x), float(p), alternative='greater').pvalue
+
 # Protocol names, in PRECEDENCE order. Each entry is (name, required, forbidden).
 # Precedence matters because protocols overlap during shaping; `banish`/`unbanish` are the
 # unambiguous marker of the banishment task and win even when a timeout is also present.
@@ -543,8 +589,10 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
             return np.nan
         return ((acc if v is None else v) - p0) / (1 - p0)
     lo, hi = _wilson(pos, pos + neg)
+    # world-DESIGN opportunity baseline (Maryam's active_benefits / active_detriments)
+    ab, ad, opp = world_opportunity(log)
     _switch_info = dict(switch_ms=switch_ms, n_before_switch=n_before)
-    return dict(**_switch_info, 
+    return dict(**_switch_info,
         mouse=mouse_id, label=label or mouse_id, task=task, log=str(log_path),
         view_scale=view_scale, n_trials=len(rows),
         pos=pos, neg=neg, drops=drops, acc=acc,
@@ -560,6 +608,8 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
         n_agree=n_agree, agree_p=agree_p,
         chance_exo=chance_exo, D_exo=toD(chance_exo),
         p_exo=binomtest(pos, pos + neg, chance_exo).pvalue if np.isfinite(chance_exo) else np.nan,
+        active_benefits=ab, active_detriments=ad, good_opportunity_ratio=opp,
+        p_opportunity=prob_at_least(pos, pos + neg, opp),
         elapsed_min=elapsed_min, active_min=active_min, freeze_min=freeze_min,
         coll_per_min=pos / elapsed_min, drops_per_min=drops / elapsed_min,
         coll_per_active_min=pos / max(active_min, 1e-9),
