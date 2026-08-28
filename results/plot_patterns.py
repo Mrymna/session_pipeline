@@ -265,10 +265,15 @@ def overview(X, T=None, out_path=None):
     a.tick_params(axis='x', rotation=0); a.grid(alpha=.2, axis='y')
 
     a = ax[0, 2]
+    # ONE fixed colour per task (matching panel (b)'s Set2 sampling). Without this, plot() auto-cycles
+    # a new colour on every (mouse, task) call, so the points do not match the deduped legend.
+    tasks_c = sorted(X.task.unique())
+    tcolors = dict(zip(tasks_c, plt.cm.Set2(np.linspace(0, 1, max(2, len(tasks_c))))))
     for m, g in X.groupby('mouse'):
         g = g.sort_values('day')
         for task, gg in g.groupby('task'):
-            a.plot(pd.to_datetime(gg.day), [m] * len(gg), 'o', ms=7, alpha=.8, label=task)
+            a.plot(pd.to_datetime(gg.day), [m] * len(gg), 'o', ms=7, alpha=.8,
+                   color=tcolors[task], label=task)
     h, l = a.get_legend_handles_labels()
     seen = dict(zip(l, h))
     a.legend(seen.values(), seen.keys(), fontsize=7)
