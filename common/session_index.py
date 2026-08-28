@@ -801,7 +801,7 @@ def blocks_of(R, size=None):
 
 
 def _block_stats(g):
-    """Pooled conflict/control criterion + the pooled STOCHASTIC (world-design) baseline for one
+    """Pooled conflict/control criterion + the pooled STOCHASTIC (game-design) baseline for one
     group of sessions. Used by both blocks_of (fixed session count) and week_blocks (calendar week).
 
     The stochastic p is POOLED, not averaged: p-values do not average, so pos/neg are summed across
@@ -817,19 +817,19 @@ def _block_stats(g):
              conflict_lo=clo, conflict_hi=chi,
              k_control=ka, n_control=na, control_p=ka / na if na else np.nan,
              control_lo=alo, control_hi=ahi,
-             D=g.D.mean(), acc=g.acc.mean())
-    if {'pos', 'neg', 'good_opportunity_ratio'} <= set(g.columns):
+             D_mouse_view=g.D_mouse_view.mean(), acc=g.acc.mean())
+    if {'pos', 'neg', 'chance_game_design'} <= set(g.columns):
         pos, neg = int(g.pos.sum()), int(g.neg.sum())
-        ratio = (float(g.good_opportunity_ratio.dropna().mean())
-                 if g.good_opportunity_ratio.notna().any() else np.nan)
+        ratio = (float(g.chance_game_design.dropna().mean())
+                 if g.chance_game_design.notna().any() else np.nan)
         accp = pos / (pos + neg) if (pos + neg) else np.nan
-        d.update(pos=pos, neg=neg, good_opportunity_ratio=ratio, acc_pooled=accp)
+        d.update(pos=pos, neg=neg, chance_game_design=ratio, acc_pooled=accp)
         if np.isfinite(ratio) and (pos + neg) > 0 and ratio < 1:
             from scipy.stats import binomtest
-            d['p_opportunity'] = binomtest(pos, pos + neg, ratio, alternative='greater').pvalue
-            d['D_opportunity'] = (accp - ratio) / (1 - ratio)
+            d['p_game_design'] = binomtest(pos, pos + neg, ratio, alternative='greater').pvalue
+            d['D_game_design'] = (accp - ratio) / (1 - ratio)
         else:
-            d['p_opportunity'] = d['D_opportunity'] = np.nan
+            d['p_game_design'] = d['D_game_design'] = np.nan
     return d
 
 

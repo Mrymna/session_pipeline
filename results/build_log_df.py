@@ -24,7 +24,7 @@ labels use coords + icons), so they run here as well and their columns land in `
 *** WHAT IS NOT HERE. *** Anything needing the video: pupil, blink, whisker, lick, groom, saccade,
 per-ROI flow. Those join onto `df_trials` later via `start_frame`/`end_frame`.
 
-*** HOW "ON SCREEN" IS DECIDED (used by the visibility-weighted `chance` columns). ***
+*** HOW "ON SCREEN" IS DECIDED (used by the mouse-view `chance` columns). ***
 The performance columns come from `common/perf_from_log.py` -> `score_log()`, which models THE WORLD
 VIEW exactly as the game camera does: it follows the avatar, so the screen is a box of
 `SKETCH / view_scale` WORLD units centred on the avatar, with SKETCH = 800 x 600 px (the game's
@@ -179,8 +179,8 @@ def session_trials(row, verbose=False):
             for o, m in zip(T.outcome, T.get('multiplier', pd.Series([np.nan] * len(T))))]
     # per-trial world-opportunity, banish_multiplier only. Benefits / detriments among THIS
     # trial's on-screen icons, using the exact effect lists. NAMED board_* on purpose: this is a
-    # DIFFERENT quantity from the session `good_opportunity_ratio`, which is the WORLD DESIGN (from
-    # world['effects']); board_good_ratio is what was actually on the board that trial and so varies
+    # DIFFERENT quantity from the session `chance_game_design`, which is the WORLD DESIGN (from
+    # world['effects']); board_chance_game_design is what was actually on the board that trial and so varies
     # (e.g. the shadow-realm escape board has neither benefit nor detriment -> nan).
     if row.get('task') == 'banish_multiplier' and 'icons' in T.columns:
         def _count(ic, S):
@@ -189,7 +189,7 @@ def session_trials(row, verbose=False):
         bd = [_count(ic, pfl.DETRIMENT_EFFECTS) for ic in T['icons']]
         T['board_benefits'] = bb
         T['board_detriments'] = bd
-        T['board_good_ratio'] = [b / (b + d) if (b + d) else np.nan for b, d in zip(bb, bd)]
+        T['board_chance_game_design'] = [b / (b + d) if (b + d) else np.nan for b, d in zip(bb, bd)]
     if 'end_ms' in T:
         T['t_ms'] = T['end_ms']
     T['label'] = row.get('label')

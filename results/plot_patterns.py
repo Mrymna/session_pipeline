@@ -57,12 +57,12 @@ def session_lines(R, out_path=None, title=''):
     a = ax[0]
     a.axhspan(0, 1.05, color='#27ae60', alpha=.06); a.axhspan(-1.05, 0, color='#c0392b', alpha=.06)
     # numpy, not Series: matplotlib warns (and will later raise) on a one-row frame
-    yerr = np.vstack([(R.D - R.D_lo).clip(lower=0).to_numpy(float),
-                      (R.D_hi - R.D).clip(lower=0).to_numpy(float)])
-    a.errorbar(x, R.D.to_numpy(float), yerr=yerr,
-               fmt='o-', ms=6, lw=1.6, capsize=3, color=OBS_C, label='D (visibility-weighted)')
-    if 'D_exo' in R:
-        a.plot(x, R.D_exo, 's--', ms=5, color=EXO_C, label='D (spawn geometry)')
+    yerr = np.vstack([(R.D_mouse_view - R.D_mouse_view_lo).clip(lower=0).to_numpy(float),
+                      (R.D_mouse_view_hi - R.D_mouse_view).clip(lower=0).to_numpy(float)])
+    a.errorbar(x, R.D_mouse_view.to_numpy(float), yerr=yerr,
+               fmt='o-', ms=6, lw=1.6, capsize=3, color=OBS_C, label='D (mouse-view)')
+    if 'D_nearest_icon' in R:
+        a.plot(x, R.D_nearest_icon, 's--', ms=5, color=EXO_C, label='D (nearest-icon)')
     a.axhline(0, color='k', lw=1)
     a.set_ylabel('D'); a.legend(fontsize=8, ncol=2)
     a.set_title('DISCRIMINATION  (0 = chance, 1 = perfect; band = 95% confidence interval)',
@@ -70,9 +70,9 @@ def session_lines(R, out_path=None, title=''):
 
     a = ax[1]
     a.plot(x, R.acc, 'o-', color=OBS_C, label='observed')
-    a.plot(x, R.chance, 'v--', color=CHANCE_C, label='chance (visibility)')
-    if 'chance_exo' in R:
-        a.plot(x, R.chance_exo, '^:', color=EXO_C, label='chance (spawn geometry)')
+    a.plot(x, R.chance_mouse_view, 'v--', color=CHANCE_C, label='chance (mouse-view)')
+    if 'chance_nearest_icon' in R:
+        a.plot(x, R.chance_nearest_icon, '^:', color=EXO_C, label='chance (nearest-icon)')
     a.set_ylabel('P(positive)'); a.legend(fontsize=8, ncol=3)
     a.set_title('OBSERVED vs its OWN chance level -- the gap between them IS D',
                 fontsize=10, fontweight='bold'); a.grid(alpha=.2)
@@ -116,7 +116,7 @@ def mouse_summary(X, metrics=None, title=''):
     mouse, error = SEM across mice). This is the "averaged across mice" view: a prolific mouse does
     NOT dominate, because each mouse is collapsed to its own mean first and those means are averaged.
     """
-    metrics = metrics or [('D', 'D (visibility)'), ('acc', 'observed accuracy'),
+    metrics = metrics or [('D_mouse_view', 'D (mouse-view)'), ('acc', 'observed accuracy'),
                           ('conflict_p', 'conflict criterion'), ('drops_per_min', 'reward drops / min')]
     metrics = [(c, l) for c, l in metrics if c in X.columns]
     mice = sorted(X.mouse.unique())
@@ -130,7 +130,7 @@ def mouse_summary(X, metrics=None, title=''):
         a.set_xticks(range(len(mice) + 1))
         a.set_xticklabels([str(m) for m in mice] + ['ALL\n(mean±SEM\nacross mice)'],
                           rotation=30, ha='right', fontsize=7)
-        if c == 'D':
+        if c == 'D_mouse_view':
             a.axhline(0, color='k', lw=.8, ls=':')
         elif c in ('conflict_p', 'acc'):
             a.axhline(.5, color='k', lw=.8, ls=':')
@@ -213,10 +213,10 @@ def half_split(C, R=None, out_path=None):
         h = len(R) // 2
         for i, (lbl, g) in enumerate((('first half\nof the days', R.iloc[:h]),
                                       ('second half\nof the days', R.iloc[h:]))):
-            a.bar(i, g.D.mean(), color=['#2980b9', '#c0392b'][i], width=.55)
+            a.bar(i, g.D_mouse_view.mean(), color=['#2980b9', '#c0392b'][i], width=.55)
             a.plot(np.full(len(g), i) + np.random.RandomState(0).normal(0, .05, len(g)),
-                   g.D, 'o', color='k', ms=4, alpha=.6)
-            out[f'days_{"first" if i == 0 else "second"}'] = dict(D=float(g.D.mean()), n=len(g))
+                   g.D_mouse_view, 'o', color='k', ms=4, alpha=.6)
+            out[f'days_{"first" if i == 0 else "second"}'] = dict(D_mouse_view=float(g.D_mouse_view.mean()), n=len(g))
         a.axhline(0, color='k', lw=1)
         a.set_xticks([0, 1])
         a.set_xticklabels(['first half\nof the days', 'second half\nof the days'], fontsize=9)
@@ -389,16 +389,16 @@ def grouped_by_animal(A, title=''):
     a.set_title('CRITERION per animal\n(the two must separate)', fontweight='bold'); a.grid(alpha=.2, axis='y')
 
     a = ax[1]                                                   # discrimination D per animal
-    a.bar(x, A.D, color='#2c3e50'); a.axhline(0, color='k', lw=1)
+    a.bar(x, A.D_mouse_view, color='#2c3e50'); a.axhline(0, color='k', lw=1)
     a.set_xticks(x); a.set_xticklabels([str(m) for m in A.mouse], fontsize=8, rotation=45, ha='right')
-    a.set_ylabel('D (visibility)')
+    a.set_ylabel('D (mouse-view)')
     a.set_title('DISCRIMINATION D per animal\n(above 0 = better than chance)', fontweight='bold')
     a.grid(alpha=.2, axis='y')
 
     a = ax[2]                                                   # P_board: conflict vs control, per animal
     cpb, apb = [], []
     for _, r in A.iterrows():
-        ratio = float(r.good_opportunity_ratio) if np.isfinite(r.good_opportunity_ratio) else np.nan
+        ratio = float(r.chance_game_design) if np.isfinite(r.chance_game_design) else np.nan
         def _pb(k, n):
             k, n = int(k), int(n)
             return (binomtest(k, n, ratio, alternative='greater').pvalue
@@ -430,10 +430,10 @@ def task_criterion(Xt, sidx, task='', show=True):
     for _, r in A.iterrows():                                   # per animal, first
         B = sidx.blocks_of(Xt[Xt.mouse == r.mouse], size=None)
         pooled_criterion(B, title=f'{r.mouse} - {task}')
-        if np.isfinite(r.get('p_opportunity', np.nan)):
+        if np.isfinite(r.get('p_game_design', np.nan)):
             print(f'  {r.mouse}: pooled {int(r.pos)}/{int(r.pos + r.neg)} positive '
-                  f'({r.acc_pooled:.3f}) vs world good:bad {r.good_opportunity_ratio:.3f} '
-                  f'-> D_opportunity {r.D_opportunity:+.3f}, p_opportunity {r.p_opportunity:.3g}')
+                  f'({r.acc_pooled:.3f}) vs world good:bad {r.chance_game_design:.3f} '
+                  f'-> D_game_design {r.D_game_design:+.3f}, p_game_design {r.p_game_design:.3g}')
         if show:
             plt.show()
     if len(A) > 1:                                              # then all animals, grouped per animal

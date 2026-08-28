@@ -68,7 +68,7 @@ DETRIMENT_EFFECTS = {'timeout', 'banish', 'debt'}
 
 
 def world_opportunity(log):
-    """(active_benefits, active_detriments, good_opportunity_ratio) from the WORLD's effect defs.
+    """(active_benefits, active_detriments, chance_game_design) from the WORLD's effect defs.
 
     active_benefits / active_detriments = how many GOOD / BAD icons the world puts on the board
     (effect lists: benefits {single_reward, double_reward, money}, detriments {timeout, banish,
@@ -76,10 +76,10 @@ def world_opportunity(log):
     `active_benefits` / `active_detriments`), else counts `world['effects']` by effect name (older
     logs, e.g. JPAS_0231).
 
-    good_opportunity_ratio = active_benefits / (active_benefits + active_detriments) -- the
+    chance_game_design = active_benefits / (active_benefits + active_detriments) -- the
     STOCHASTIC baseline: the hit rate expected if the animal collected icons in proportion to how
     many good vs bad the world offers, with no discrimination at all. It is the world-DESIGN chance
-    level, a further baseline alongside the visibility-weighted `chance` and the exogenous `chance_exo`.
+    level, a further baseline alongside the mouse-view `chance` and the exogenous `chance_nearest_icon`.
 
     NB the log's own `good_ratio` field is the ODDS (benefits / detriments, e.g. 2.0), NOT this
     probability -- do not use it directly as a chance level.
@@ -502,7 +502,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
     freeze_min = sum(r['freeze_ms'] for r in rows) / 60000
     active_min = elapsed_min - freeze_min
 
-    # --- visibility-weighted chance ---------------------------------------------------------
+    # --- mouse-view chance ---------------------------------------------------------
     vpos = vneg = 0.0      # ZERO-memory: time-weighted fraction on screen
     mpos = mneg = 0.0      # PERFECT-memory: ever on screen this trial
     n_use = 0
@@ -536,7 +536,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
     chance = vpos / (vpos + vneg) if np.isfinite(vpos + vneg) and (vpos + vneg) > 0 else np.nan
     # PERFECT-memory bound: he also knows icons he has already seen this trial (see the module
     # docstring). The two are the ends of a memory assumption, not a right and a wrong baseline.
-    chance_mem = mpos / (mpos + mneg) if np.isfinite(mpos + mneg) and (mpos + mneg) > 0 else np.nan
+    chance_memory = mpos / (mpos + mneg) if np.isfinite(mpos + mneg) and (mpos + mneg) > 0 else np.nan
 
     # --- *** THE LEARNING CRITERION *** ------------------------------------------------------
     # On the trials where BOTH types were on screen together, split by which was NEARER at that
@@ -585,7 +585,7 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
         nearest = min(ic, key=lambda i: np.hypot(i['x'] - ax, i['y'] - ay))
         near_pos += nearest['effect'] in pos_set
         near_tot += 1
-    chance_exo = near_pos / near_tot if near_tot else np.nan
+    chance_nearest_icon = near_pos / near_tot if near_tot else np.nan
 
     from scipy.stats import binomtest
     acc = pos / (pos + neg) if (pos + neg) else np.nan
@@ -605,20 +605,20 @@ def score_log(log_path, view_scale=None, mouse_id=None, label=None, after_switch
         mouse=mouse_id, label=label or mouse_id, task=task, log=str(log_path),
         view_scale=view_scale, n_trials=len(rows),
         pos=pos, neg=neg, drops=drops, acc=acc,
-        vis_pos=vpos, vis_neg=vneg, chance=chance,
-        mem_pos=mpos, mem_neg=mneg, chance_mem=chance_mem,
-        D_mem=toD(chance_mem), p_mem=binomtest(pos, pos + neg, chance_mem).pvalue
-        if np.isfinite(chance_mem) else np.nan,
-        D=toD(chance), D_lo=toD(chance, lo), D_hi=toD(chance, hi),
-        p=binomtest(pos, pos + neg, chance).pvalue if np.isfinite(chance) else np.nan,
+        vis_pos=vpos, vis_neg=vneg, chance_mouse_view=chance,
+        mem_pos=mpos, mem_neg=mneg, chance_memory=chance_memory,
+        D_memory=toD(chance_memory), p_memory=binomtest(pos, pos + neg, chance_memory).pvalue
+        if np.isfinite(chance_memory) else np.nan,
+        D_mouse_view=toD(chance), D_mouse_view_lo=toD(chance, lo), D_mouse_view_hi=toD(chance, hi),
+        p_mouse_view=binomtest(pos, pos + neg, chance).pvalue if np.isfinite(chance) else np.nan,
         n_both=n_conf + n_agree,
         n_conflict=n_conf, k_conflict=k_conf, conflict_p=conflict_p,
         conflict_lo=conflict_lo, conflict_hi=conflict_hi,
         n_agree=n_agree, agree_p=agree_p,
-        chance_exo=chance_exo, D_exo=toD(chance_exo),
-        p_exo=binomtest(pos, pos + neg, chance_exo).pvalue if np.isfinite(chance_exo) else np.nan,
-        active_benefits=ab, active_detriments=ad, good_opportunity_ratio=opp,
-        p_opportunity=prob_at_least(pos, pos + neg, opp),
+        chance_nearest_icon=chance_nearest_icon, D_nearest_icon=toD(chance_nearest_icon),
+        p_nearest_icon=binomtest(pos, pos + neg, chance_nearest_icon).pvalue if np.isfinite(chance_nearest_icon) else np.nan,
+        active_benefits=ab, active_detriments=ad, chance_game_design=opp,
+        p_game_design=prob_at_least(pos, pos + neg, opp),
         elapsed_min=elapsed_min, active_min=active_min, freeze_min=freeze_min,
         coll_per_min=pos / elapsed_min, drops_per_min=drops / elapsed_min,
         coll_per_active_min=pos / max(active_min, 1e-9),
