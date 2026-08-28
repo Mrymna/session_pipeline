@@ -240,35 +240,38 @@ def half_split(C, R=None, out_path=None):
 def overview(X, T=None, out_path=None):
     """How many sessions per mouse per world, how long they run, how many trials they carry.
 
-    Deliberately the FIRST thing to look at: a D curve is unreadable without knowing that a point
-    is one 40-minute session of 80 trials and the next is a 10-minute session of 12. Panels (d)
-    and (e) are what tell you whether two points are comparable at all.
+    Deliberately the FIRST thing to look at: a D curve is unreadable without knowing how big each
+    point is -- sessions vary a lot in length and trial count, and two points are only comparable if
+    they carry a similar amount of data. Panels (d) and (e) show those sizes for your own sessions.
     """
     fig, ax = plt.subplots(2, 3, figsize=(17, 9))
 
+    # ONE canonical colour per TASK, used in (a), (b) and (c). Colour encodes the PROTOCOL only --
+    # worlds/textures are never used as a colour or as a protocol divider (a texture can host more
+    # than one protocol, so it is not a protocol axis).
+    tasks_c = sorted(X.task.unique())
+    tcolors = dict(zip(tasks_c, plt.cm.Set2(np.linspace(0, 1, max(2, len(tasks_c))))))
+
     a = ax[0, 0]
-    ct = X.pivot_table(index='mouse', columns='texture_id', values='session',
-                       aggfunc='count').fillna(0)
-    ct.plot(kind='bar', stacked=True, ax=a, colormap='tab20', width=.7)
+    ct = X.pivot_table(index='mouse', columns='task', values='session', aggfunc='count').fillna(0)
+    ct = ct[[t for t in tasks_c if t in ct.columns]]
+    ct.plot(kind='bar', stacked=True, ax=a, color=[tcolors[c] for c in ct.columns], width=.7)
     a.set_ylabel('sessions'); a.set_xlabel('')
-    a.legend(fontsize=7, title='world', ncol=2)
-    a.set_title('(a) SESSIONS per mouse per WORLD', fontsize=10, fontweight='bold')
+    a.legend(fontsize=7, title='protocol', ncol=1)
+    a.set_title('(a) SESSIONS per mouse per PROTOCOL', fontsize=10, fontweight='bold')
     a.tick_params(axis='x', rotation=0); a.grid(alpha=.2, axis='y')
 
     a = ax[0, 1]
-    ct2 = X.pivot_table(index='mouse', columns='task', values='session',
-                        aggfunc='count').fillna(0)
-    ct2.plot(kind='bar', stacked=True, ax=a, colormap='Set2', width=.7)
-    a.set_ylabel('sessions'); a.set_xlabel('')
-    a.legend(fontsize=7, title='protocol')
-    a.set_title('(b) SESSIONS per mouse per PROTOCOL', fontsize=10, fontweight='bold')
-    a.tick_params(axis='x', rotation=0); a.grid(alpha=.2, axis='y')
+    tc = X.task.value_counts().reindex(tasks_c).fillna(0)
+    a.bar(range(len(tasks_c)), tc.to_numpy(float), color=[tcolors[t] for t in tasks_c])
+    for i, v in enumerate(tc.to_numpy(float)):
+        a.text(i, v, str(int(v)), ha='center', va='bottom', fontweight='bold', fontsize=8)
+    a.set_xticks(range(len(tasks_c))); a.set_xticklabels(tasks_c, rotation=20, ha='right', fontsize=8)
+    a.set_ylabel('sessions')
+    a.set_title('(b) SESSIONS per PROTOCOL (all mice)', fontsize=10, fontweight='bold')
+    a.grid(alpha=.2, axis='y')
 
     a = ax[0, 2]
-    # ONE fixed colour per task (matching panel (b)'s Set2 sampling). Without this, plot() auto-cycles
-    # a new colour on every (mouse, task) call, so the points do not match the deduped legend.
-    tasks_c = sorted(X.task.unique())
-    tcolors = dict(zip(tasks_c, plt.cm.Set2(np.linspace(0, 1, max(2, len(tasks_c))))))
     for m, g in X.groupby('mouse'):
         g = g.sort_values('day')
         for task, gg in g.groupby('task'):
