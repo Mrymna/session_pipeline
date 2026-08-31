@@ -324,8 +324,8 @@ def figure_decision(res, pos_label='reward', neg_label='banishment'):
 
     fig.suptitle(f"{res['mouse_id']}  page B -- THE DECISION POINT: when he could see both, "
                  f"which did he go to?\n"
-                 f"baseline is EXOGENOUS: which icon was nearer at that instant, fixed by the board "
-                 f"and not by anything he did next", fontsize=12.5, fontweight='bold')
+                 f"NEAREST-ICON baseline (exogenous): which icon was nearer at that instant, fixed by "
+                 f"the board and not by anything he did next", fontsize=12.5, fontweight='bold')
     plt.tight_layout(rect=[0, 0, 1, 0.90])
     return fig
 
@@ -388,12 +388,6 @@ def figure_avoidance(res, pos_label='reward', neg_label='banishment'):
     a = ax[1, 1]; a.axis('off')
     a.set_title('(d)  is there any avoidance signal?', fontsize=10.5, fontweight='bold')
     a.text(-0.02, 0.97,
-           f"Page B shows his CHOICE carries no information about icon type. This page\n"
-           f"looks for a subtler behavioural sign that he recognises the {neg_label}\n"
-           f"even when his final choice looks like proximity.\n\n"
-           f"CLOSEST APPROACH (a) is NOT evidence on its own: staying far from the\n"
-           f"{neg_label} is what you get for free by going somewhere else. It is\n"
-           f"reported for completeness, not as a test.\n\n"
            f"THE ACTUAL TEST is (b): approaching and then veering off. He did that on\n"
            f"{vn} of {len(rew)} {pos_label} trials ({100*vn/len(rew):.0f}%) for the {neg_label}, "
            f"versus {vp_} ({100*vp_/len(rew):.0f}%) for a\n{pos_label} -- the control for ordinary "

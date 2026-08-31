@@ -45,7 +45,8 @@ def run(session_dir, write=True, return_fig=False):
     fig.suptitle('What is the chance level when the animal cannot see the whole board?',
                  fontsize=17, fontweight='bold', color=FG, y=0.975)
     fig.text(0.5, 0.933, f"{sess['mouse_id']}  -  why the discrimination score D is measured against "
-             'a VISIBILITY-WEIGHTED baseline, and why it is reported as a RANGE',
+             "a MOUSE-VIEW baseline (chance from what is on the mouse's screen), and why it is "
+             'reported as a RANGE',
              ha='center', fontsize=11.5, color=MUT)
 
     # ── 1. the board vs what he can see ────────────────────────────────────────────

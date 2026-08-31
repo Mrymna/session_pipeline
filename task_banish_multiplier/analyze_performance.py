@@ -9,7 +9,8 @@ inside his viewport, and the two types are NOT on screen equally often. Measured
 reward icons are visible 0.69 of the time per frame, banish icons 0.28. So an animal walking around
 with ZERO ability to tell them apart, collecting whatever he bumps into, already lands ~71% positive.
 
-So the discrimination metric is measured against a **VISIBILITY-WEIGHTED CHANCE BASELINE**:
+So the discrimination metric is measured against a **MOUSE-VIEW CHANCE BASELINE** (chance from what is
+on the mouse's screen; formerly called "visibility-weighted"):
 
     chance = mean visible reward icons / (mean visible reward + mean visible banish icons)
 
@@ -221,12 +222,12 @@ def run(session_dir, write=True, return_fig=False):
     exo = vp.spawn_geometry_chance(a, log, ['single_reward'], ['banish'])
     D_exo = (B['acc'] - exo) / (1 - exo)
     p_exo = binomtest(B['pos'], B['pos'] + B['neg'], exo).pvalue
-    print(f"\n  ROBUSTNESS -- the visibility baseline is ENDOGENOUS (steering away from the banishment")
-    print(f"  makes it visible less often, which the baseline would absorb). Exogenous check, from")
-    print(f"  the spawn configuration + his position when the batch appeared:")
-    print(f"    nearest-at-spawn is positive {exo:.3f} -> D = {D_exo:+.3f}, p = {p_exo:.3f}")
+    print(f"\n  ROBUSTNESS -- the MOUSE-VIEW baseline is ENDOGENOUS (steering away from the banishment")
+    print(f"  makes it visible less often, which the baseline would absorb). NEAREST-ICON check, from")
+    print(f"  the spawn configuration + his position when the batch appeared (exogenous):")
+    print(f"    nearest-icon (nearest-at-spawn is positive) {exo:.3f} -> D = {D_exo:+.3f}, p = {p_exo:.3f}")
     print(f"    -> the 'at chance' read {'HOLDS' if p_exo > 0.05 else 'does NOT hold'} under both baselines")
-    print(f"\n  DISCRIMINATION: observed {B['acc']:.3f} vs visibility-chance {B['chance']:.3f} "
+    print(f"\n  DISCRIMINATION: observed {B['acc']:.3f} vs mouse-view chance {B['chance']:.3f} "
           f"-> D = {B['D']:+.3f}, binomial p = {B['p']:.3f}")
     print(f"     {'AT CHANCE - no evidence he tells reward from banishment' if B['p'] > 0.05 else 'ABOVE CHANCE'}")
     print(f"     PERFECT-MEMORY bound: chance {B['chance_mem']:.3f} -> D = {B['D_mem']:+.3f}, "
@@ -265,7 +266,7 @@ def run(session_dir, write=True, return_fig=False):
     obs = [blocks[k]['acc'] for k in labs]; ch = [blocks[k]['chance'] for k in labs]
     xx = np.arange(3)
     a1.bar(xx - 0.18, obs, 0.36, color='#27ae60', alpha=0.9, label='observed P(positive)')
-    a1.bar(xx + 0.18, ch, 0.36, color='#95a5a6', alpha=0.9, label='visibility-weighted CHANCE')
+    a1.bar(xx + 0.18, ch, 0.36, color='#95a5a6', alpha=0.9, label='mouse-view CHANCE')
     a1.axhline(2 / 3, color='#c0392b', ls='--', lw=1.4, label='perfect-memory baseline (he remembers what he saw)')
     for i, k in enumerate(labs):
         a1.text(i, max(obs[i], ch[i]) + 0.02, f"p={blocks[k]['p']:.2f}", ha='center', fontsize=8)
@@ -322,7 +323,7 @@ def run(session_dir, write=True, return_fig=False):
     #    series are now drawn with their good direction stated, and the efficiency series is the
     #    one the title names.
     a4 = ax[1, 1]
-    a4.bar([-0.16, 0.84], [f['eff'], s_['eff']], 0.32, color=C_HALF, alpha=0.9)
+    a4.bar([-0.16, 0.84], [f['eff'], s_['eff']], 0.32, color=C_HALF[0], alpha=0.9)
     a4.set_xticks([0, 1]); a4.set_xticklabels(['first half', 'second half'], fontsize=9)
     a4.set_ylabel('path efficiency  (HIGHER = better)', color='#2c3e50')
     a4.set_ylim(0, max(f['eff'], s_['eff']) * 1.7)
@@ -387,8 +388,10 @@ def run(session_dir, write=True, return_fig=False):
     a7.axhline(0, color='k', lw=1.2)
     a7.set_xticks(np.arange(2)); a7.set_xticklabels(['first half', 'second half'], fontsize=9)
     a7.set_ylabel('alignment = cos(heading error)')
-    a7.text(0.98, 0.96, 'toward', transform=a7.transAxes, ha='right', va='top', fontsize=8, color='#2c7')
-    a7.text(0.98, 0.04, 'away', transform=a7.transAxes, ha='right', va='bottom', fontsize=8, color='#c33')
+    a7.text(1.015, 0.98, 'toward', transform=a7.transAxes, ha='left', va='top', fontsize=8,
+            color='#2c7', rotation=90, clip_on=False)
+    a7.text(1.015, 0.02, 'away', transform=a7.transAxes, ha='left', va='bottom', fontsize=8,
+            color='#c33', rotation=90, clip_on=False)
     a7.set_title('(h)  is he HEADING toward the icons he can SEE?\n'
                  'heading error = the angle between the way he is pointing and the\n'
                  'direction to the icon (its BEARING); shown as cos(error):\n'
@@ -397,7 +400,7 @@ def run(session_dir, write=True, return_fig=False):
     a7.legend(fontsize=7.5); a7.grid(alpha=0.2, axis='y')
 
     a8 = ax[2, 2]; a8.axis('off')
-    a8.set_title('(i)  what "visibility-weighted chance" means', fontsize=10.5, fontweight='bold')
+    a8.set_title('(i)  what "mouse-view chance" means', fontsize=10.5, fontweight='bold')
     a8.text(0.0, 1.0,
             "He can only choose among the icons that are ON HIS SCREEN,\n"
             "and the two types are not on screen equally often.\n\n"
@@ -438,7 +441,7 @@ def run(session_dir, write=True, return_fig=False):
         ['total reward DROPS earned',   *[f"{blocks[k]['units']}" for k in labs], 'count'],
         ['P(hit POSITIVE | collected)', *[f"{blocks[k]['acc']:.3f}" for k in labs], 'CHOICE'],
         ['P(hit NEGATIVE | collected)', *[f"{1-blocks[k]['acc']:.3f}" for k in labs], 'CHOICE'],
-        ['  chance from VISIBILITY',    *[f"{blocks[k]['chance']:.3f}" for k in labs], 'CHOICE'],
+        ['  chance from MOUSE-VIEW',     *[f"{blocks[k]['chance']:.3f}" for k in labs], 'CHOICE'],
         ['  DISCRIMINATION SCORE  D',   *[f"{blocks[k]['D']:+.3f}" for k in labs], 'CHOICE'],
         ['  p vs chance (binomial)',    *[f"{blocks[k]['p']:.3f}" for k in labs], 'CHOICE'],
         ['  DISCRIMINATION SCORE  D (perfect memory)',
@@ -481,7 +484,7 @@ def run(session_dir, write=True, return_fig=False):
     fig.text(0.5, 0.030, verdict, ha='center', va='bottom', fontsize=11,
              color='#c0392b' if B['p'] > 0.05 else '#27ae60', fontweight='bold')
     fig.suptitle(f"{sess['mouse_id']} PERFORMANCE SCORECARD\n"
-                 f"discrimination is scored against a VISIBILITY-WEIGHTED chance baseline "
+                 f"discrimination is scored against a MOUSE-VIEW chance baseline "
                  f"(reward icons on screen {B['vis_r']:.2f} vs banish {B['vis_b']:.2f} per frame), "
                  f"not the 2:1 icon-count baseline\n"
                  f"the multiplier is EXCLUDED from accuracy (it double-counts a streak) and "
