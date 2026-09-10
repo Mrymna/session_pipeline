@@ -187,7 +187,10 @@ def draw_eye_inset(img, g_eye, eye, cx, cy, r, glx, gly, x0, y0, style,
     cv2.putText(img, cap, (x0, y0 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, st['circle_col'], 1, cv2.LINE_AA)
 
 
-def main(session_dir, lo, hi, forced_style=None):
+def build_context(session_dir, forced_style=None, verbose=True):
+    """Load everything render_frame needs for one session ONCE (all the per-frame arrays + the resolved
+    style). Shared by the whole-clip renderer (main) and the single-frame still, so both draw the same
+    thing. Returns a context dict."""
     d = Path(session_dir).resolve()
     sess = json.load(open(d / 'session.json'))
     rois = json.load(open(sess['roi_config']))
@@ -196,7 +199,8 @@ def main(session_dir, lo, hi, forced_style=None):
     ev = np.load(d / 'opticflow' / 'eye_events.npz', allow_pickle=True)
     style = resolve_style(sess, ev, forced_style)
     st = STYLES[style]
-    print(f"  style = {style}  ({'approximate iris - no dil/con' if style == 'approx' else 'stable iris - dil/con shown'})")
+    if verbose:
+        print(f"  style = {style}  ({'approximate iris - no dil/con' if style == 'approx' else 'stable iris - dil/con shown'})")
 
     p_cx, p_cy, p_r = tr['cx'], tr['cy'], tr['radius']
     glx, gly = tr['glint_x'], tr['glint_y']
@@ -215,11 +219,64 @@ def main(session_dir, lo, hi, forced_style=None):
         groom = np.load(d / 'opticflow' / 'groom_mask_clean.npy')
     wpath = d / 'opticflow' / 'whisker.npz'
     if wpath.exists():
-        wz = np.load(wpath, allow_pickle=True)
-        whisking = wz['whisking']
+        whisking = np.load(wpath, allow_pickle=True)['whisking']
     else:
         whisking = np.zeros(n, bool)
 
+    return dict(sess=sess, rois=rois, eye=eye, style=style, n=n,
+                p_cx=p_cx, p_cy=p_cy, p_r=p_r, glx=glx, gly=gly,
+                radius=radius, blink=blink, squint=squint, unrel=unrel, dil=dil, con=con,
+                lick=lick, groom=groom, whisking=whisking)
+
+
+def render_frame(img, f, C, lo, hi):
+    """Draw the full annotated eye/face overlay for frame `f` onto `img`, IN PLACE. `lo`/`hi` bound the
+    radius sparkline window (the clip window for the movie; a window around `f` for a single still).
+    `C` is a build_context() dict. Returns `img`."""
+    style = C['style']; st = STYLES[style]; sess = C['sess']; eye = C['eye']
+    H, W = img.shape[:2]
+    radius, blink, squint, unrel = C['radius'], C['blink'], C['squint'], C['unrel']
+    dil, con = C['dil'], C['con']
+    lick, groom, whisking = C['lick'], C['groom'], C['whisking']
+    g_eye = cv2.cvtColor(img[eye[1]:eye[3], eye[0]:eye[2]], cv2.COLOR_BGR2GRAY).copy()
+    draw_rois(img, C['rois'])
+    ph = 170 if st['show_unreliable_box'] or st['banner'] else 140
+    ov = img.copy(); cv2.rectangle(ov, (0, 0), (W, ph), (0, 0, 0), -1)
+    cv2.addWeighted(ov, 0.62, img, 0.38, 0, img)
+    cv2.putText(img, f"{sess['mouse_id']}  EYE + FACE DETECTION   [{style} iris]", (16, 30),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2, cv2.LINE_AA)
+    cv2.putText(img, f"frame {f}   radius {st['radius_prefix']}{np.nan_to_num(radius[f]):4.1f}px",
+                (16, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1, cv2.LINE_AA)
+    is_blink = bool(blink[f]); is_squint = bool(squint[f])
+    x, y, w, h, g = 16, 70, 140, 26, 8
+    pill(img, x, y, w, h, 'BLINK', is_blink, GREY); x += w + g
+    if st['show_dilcon']:
+        pill(img, x, y, w, h, 'DILATION', bool(dil[f]) if dil is not None else False, BLUE); x += w + g
+        pill(img, x, y, w, h, 'CONSTRICT', bool(con[f]) if con is not None else False, VERM); x += w + g
+    else:
+        pill(img, x, y, w, h, 'EYE SQUINT', is_squint, AMBER); x += w + g
+    pill(img, x, y, w, h, 'LICKING', bool(lick[f]), TEAL); x += w + g
+    pill(img, x, y, w, h, 'GROOMING', bool(groom[f]), BROWN); x += w + g
+    pill(img, x, y, w, h, 'WHISKING', bool(whisking[f]), GREEN)
+    if st['show_unreliable_box']:
+        # 231's two mutually-exclusive slots: a crescent misfit vs a mild eye-shrink
+        status_box(img, 16, y + h + 6, 190, 22, 'IRIS BEHIND GLINT',
+                   bool(unrel[f]) and not is_squint, ORANGE)
+        status_box(img, 214, y + h + 6, 150, 22, 'EYE SQUINT', is_squint, AMBER)
+    if st['banner']:
+        cv2.putText(img, st['banner'], (16, ph - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.52,
+                    AMBER, 1, cv2.LINE_AA)
+    sparkline(img, W - 360, 14, 340, 74, f, radius, blink, lo, hi, st['spark_label'], dil, con)
+    ih = (eye[3] - eye[1]) * ZOOM
+    draw_eye_inset(img, g_eye, eye, C['p_cx'][f], C['p_cy'][f], C['p_r'][f], C['glx'][f], C['gly'][f],
+                   16, H - ih - 16, style, blink=is_blink, squint=is_squint, unreliable=bool(unrel[f]))
+    return img
+
+
+def main(session_dir, lo, hi, forced_style=None):
+    d = Path(session_dir).resolve()
+    C = build_context(d, forced_style)
+    style = C['style']; sess = C['sess']
     src = cv2.VideoCapture(sess['video_original'])
     fps = src.get(cv2.CAP_PROP_FPS) or sess['fps']
     W, H = int(src.get(3)), int(src.get(4))
@@ -231,43 +288,11 @@ def main(session_dir, lo, hi, forced_style=None):
         ok, img = src.read()
         if not ok:
             break
-        f = lo + i
-        g_eye = cv2.cvtColor(img[eye[1]:eye[3], eye[0]:eye[2]], cv2.COLOR_BGR2GRAY).copy()
-        draw_rois(img, rois)
-        ph = 170 if st['show_unreliable_box'] or st['banner'] else 140
-        ov = img.copy(); cv2.rectangle(ov, (0, 0), (W, ph), (0, 0, 0), -1)
-        cv2.addWeighted(ov, 0.62, img, 0.38, 0, img)
-        cv2.putText(img, f"{sess['mouse_id']}  EYE + FACE DETECTION   [{style} iris]", (16, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (240, 240, 240), 2, cv2.LINE_AA)
-        cv2.putText(img, f"frame {f}   radius {st['radius_prefix']}{np.nan_to_num(radius[f]):4.1f}px",
-                    (16, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1, cv2.LINE_AA)
-        is_blink = bool(blink[f]); is_squint = bool(squint[f])
-        x, y, w, h, g = 16, 70, 140, 26, 8
-        pill(img, x, y, w, h, 'BLINK', is_blink, GREY); x += w + g
-        if st['show_dilcon']:
-            pill(img, x, y, w, h, 'DILATION', bool(dil[f]) if dil is not None else False, BLUE); x += w + g
-            pill(img, x, y, w, h, 'CONSTRICT', bool(con[f]) if con is not None else False, VERM); x += w + g
-        else:
-            pill(img, x, y, w, h, 'EYE SQUINT', is_squint, AMBER); x += w + g
-        pill(img, x, y, w, h, 'LICKING', bool(lick[f]), TEAL); x += w + g
-        pill(img, x, y, w, h, 'GROOMING', bool(groom[f]), BROWN); x += w + g
-        pill(img, x, y, w, h, 'WHISKING', bool(whisking[f]), GREEN)
-        if st['show_unreliable_box']:
-            # 231's two mutually-exclusive slots: a crescent misfit vs a mild eye-shrink
-            status_box(img, 16, y + h + 6, 190, 22, 'IRIS BEHIND GLINT',
-                       bool(unrel[f]) and not is_squint, ORANGE)
-            status_box(img, 214, y + h + 6, 150, 22, 'EYE SQUINT', is_squint, AMBER)
-        if st['banner']:
-            cv2.putText(img, st['banner'], (16, ph - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.52,
-                        AMBER, 1, cv2.LINE_AA)
-        sparkline(img, W - 360, 14, 340, 74, f, radius, blink, lo, hi, st['spark_label'], dil, con)
-        ih = (eye[3] - eye[1]) * ZOOM
-        draw_eye_inset(img, g_eye, eye, p_cx[f], p_cy[f], p_r[f], glx[f], gly[f],
-                       16, H - ih - 16, style, blink=is_blink, squint=is_squint,
-                       unreliable=bool(unrel[f]))
+        render_frame(img, lo + i, C, lo, hi)
         wr.write(img)
     wr.release(); src.release()
     print(f'wrote {outp}')
+    blink, squint, lick, groom = C['blink'], C['squint'], C['lick'], C['groom']
     print(f'  in clip: {int(blink[lo:hi].sum())} blink, {int(squint[lo:hi].sum())} squint, '
           f'{int(lick[lo:hi].sum())} licking, {int(groom[lo:hi].sum())} grooming frames')
     return outp
