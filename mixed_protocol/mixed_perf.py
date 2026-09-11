@@ -226,11 +226,22 @@ def collected_samples_dist(log, df, effect, window_s=8.0):
 
 
 # ── discovery ───────────────────────────────────────────────────────────────────────────
-def find_sessions(main_dir, pattern='**/log.json'):
+def find_sessions(main_dir, pattern='*/*/log.json'):
     """Every log under `main_dir` whose board is the mixed random-punishment protocol.
-    Returns [(path, log), ...] sorted by path."""
+
+    The real server layout is `MAIN_DIR/<mouse>/<session>/log.json`, so the default pattern is
+    `*/*/log.json` (mouse folder / session folder / log). If that matches nothing (a different depth,
+    or MAIN_DIR is already a mouse or a session folder) it falls back to a recursive search, and to
+    MAIN_DIR/log.json for a single session. Returns [(path, log), ...] sorted by path.
+    """
+    main_dir = Path(main_dir)
+    paths = sorted(main_dir.glob(pattern))
+    if not paths:
+        paths = sorted(main_dir.glob('**/log.json'))          # any depth
+    if not paths and (main_dir / 'log.json').exists():
+        paths = [main_dir / 'log.json']                       # MAIN_DIR is itself one session
     out = []
-    for p in sorted(Path(main_dir).glob(pattern)):
+    for p in paths:
         try:
             log = load_log(p)
         except Exception:
@@ -240,12 +251,26 @@ def find_sessions(main_dir, pattern='**/log.json'):
     return out
 
 
-def session_label(path, log):
-    """(mouse, session) identity for a log: mouse from experiment_data.ID (digits normalised),
-    session from the folder name."""
+def session_label(path, log, main_dir=None):
+    """(mouse, session, mouse_folder) identity for a log, for the layout MAIN_DIR/<mouse>/<session>/.
+
+    session  = the session FOLDER name (the leaf directory holding log.json).
+    mouse    = experiment_data.ID with its digits normalised to JPAS_XXXX when it has digits, else the
+               mouse FOLDER name.
+    mouse_folder = the folder name one level up from the session (what the directory says the mouse is),
+               returned separately so a mismatch with the log's ID is visible rather than hidden.
+    """
+    p = Path(path)
+    session = p.parent.name or p.stem
+    mouse_folder = p.parent.parent.name if p.parent.parent != p.parent else ''
+    if main_dir is not None:
+        try:
+            parts = p.relative_to(main_dir).parts
+            if len(parts) >= 2:
+                mouse_folder = parts[0]
+        except ValueError:
+            pass
     ed = log.get('experiment_data', {})
-    raw = str(ed.get('ID', '') or '')
-    digits = ''.join(ch for ch in raw if ch.isdigit())
-    mouse = f'JPAS_{int(digits):04d}' if digits else (Path(path).parent.name or raw or 'unknown')
-    session = Path(path).parent.name or Path(path).stem
-    return mouse, session
+    digits = ''.join(ch for ch in str(ed.get('ID', '') or '') if ch.isdigit())
+    mouse = f'JPAS_{int(digits):04d}' if digits else (mouse_folder or 'unknown')
+    return mouse, session, mouse_folder
