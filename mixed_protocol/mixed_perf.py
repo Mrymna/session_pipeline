@@ -226,13 +226,35 @@ def collected_samples_dist(log, df, effect, window_s=8.0):
 
 
 # ── discovery ───────────────────────────────────────────────────────────────────────────
-def find_sessions(main_dir, pattern='*/*/log.json'):
+def _progress(seq, desc='', enabled=True):
+    """Wrap an iterable with a progress bar (tqdm in a notebook, else a carriage-return percentage)."""
+    seq = list(seq)
+    if not enabled or not seq:
+        return iter(seq)
+    try:
+        from tqdm.auto import tqdm
+        return tqdm(seq, desc=desc)
+    except Exception:
+        def gen():
+            n = len(seq)
+            for i, x in enumerate(seq, 1):
+                print(f'\r{desc}: {i}/{n} ({100 * i // n}%)', end='', flush=True)
+                yield x
+            print()
+        return gen()
+
+
+def find_sessions(main_dir, pattern='*/*/log.json', progress=True):
     """Every log under `main_dir` whose board is the mixed random-punishment protocol.
 
     The real server layout is `MAIN_DIR/<mouse>/<session>/log.json`, so the default pattern is
     `*/*/log.json` (mouse folder / session folder / log). If that matches nothing (a different depth,
     or MAIN_DIR is already a mouse or a session folder) it falls back to a recursive search, and to
     MAIN_DIR/log.json for a single session. Returns [(path, log), ...] sorted by path.
+
+    Logs are large (~90 MB each), so this shows a **progress bar** and does a cheap text pre-filter --
+    a log with no 'timeout' or no 'banish' anywhere in it cannot be this protocol, so it is skipped
+    WITHOUT the expensive JSON parse. Pass `progress=False` to silence the bar.
     """
     main_dir = Path(main_dir)
     paths = sorted(main_dir.glob(pattern))
@@ -240,14 +262,24 @@ def find_sessions(main_dir, pattern='*/*/log.json'):
         paths = sorted(main_dir.glob('**/log.json'))          # any depth
     if not paths and (main_dir / 'log.json').exists():
         paths = [main_dir / 'log.json']                       # MAIN_DIR is itself one session
+    if progress:
+        print(f'scanning {len(paths)} log file(s) under {main_dir} ...')
     out = []
-    for p in paths:
+    for p in _progress(paths, 'checking logs', progress):
         try:
-            log = load_log(p)
+            raw = p.read_text()
+        except Exception:
+            continue
+        if 'timeout' not in raw or 'banish' not in raw:       # cheap reject before parsing 90 MB of JSON
+            continue
+        try:
+            log = json.loads(raw)
         except Exception:
             continue
         if is_mixed_protocol(log):
             out.append((p, log))
+    if progress:
+        print(f'  -> {len(out)} mixed-protocol session(s)')
     return out
 
 
