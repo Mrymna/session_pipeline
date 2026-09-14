@@ -30,6 +30,7 @@ sys.path.insert(0, str(_COMMON))
 import perf_from_log as pfl        # noqa: E402
 import geom                        # noqa: E402
 import heading                     # noqa: E402
+import joyfine                     # noqa: E402
 
 POS, NEG, NEU = pfl.POSITIVE_EFFECTS, pfl.NEGATIVE_EFFECTS, pfl.NEUTRAL_EFFECTS
 DEFAULT_VIEW_SCALE = getattr(pfl, 'DEFAULT_VIEW_SCALE', 0.35)
@@ -202,6 +203,27 @@ def collected_curves_time(log, df, effect, window_s=8.0):
         tt, err = heading.heading_error(theta_t, coords, (r.x, r.y), s_ms, e_ms)
         if tt.size:
             curves.append(((tt - e_ms) / 1000, np.degrees(np.abs(err))))
+    return curves
+
+
+def collected_joyfine_curves_time(log, df, effect, window_s=8.0):
+    """[(t_rel_s, joy_fine_value), ...] over the approach to each collection of `effect` -- the joystick
+    FINE-movement trace (joyfine.fine_trace = low-passed rolling-std of |joystick|), analogous to
+    collected_curves_time for heading. Empty if the log has no joystick stream."""
+    joy = np.asarray(log.get('joystick_t[ms]/x/y', []), float)
+    if joy.ndim != 2 or joy.shape[0] < 2:
+        return []
+    jt, jx, jy = joy[:, 0], joy[:, 1], joy[:, 2]
+    fine = joyfine.fine_trace(jx, jy)          # per-sample trace aligned to jt
+    curves = []
+    for i in range(len(df)):
+        r = df.iloc[i]
+        if r.effect != effect:
+            continue
+        e_ms = r.end_ms; s_ms = max(r.start_ms, e_ms - window_s * 1000)
+        m = (jt >= s_ms) & (jt <= e_ms)
+        if m.sum() >= 2:
+            curves.append(((jt[m] - e_ms) / 1000, fine[m]))
     return curves
 
 
