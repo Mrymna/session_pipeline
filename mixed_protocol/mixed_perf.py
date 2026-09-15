@@ -126,7 +126,7 @@ def generated_punishments(log):
                    pseudo-random generator)
     Returns generated counts, the timeout fraction, the collected counts, the B/T string, and both p's.
     """
-    from collections import Counter
+    from collections import Counter, defaultdict
     seen, order = {}, []
     for s in sorted(log.get('spawns', []), key=lambda s: s.get('time', 0)):
         for ic in (s.get('current') or []):
@@ -134,6 +134,23 @@ def generated_punishments(log):
             if e in ('banish', 'timeout') and i is not None and i not in seen:
                 seen[i] = e; order.append(e)
     gb = order.count('banish'); gt = order.count('timeout'); n = gb + gt
+
+    # per-TRIAL (spawn-batch) board presence, independent of collection: how many batches carried
+    # each punishment. A punishment icon PERSISTS across the reward-respawn batches until it is hit,
+    # so these are >= the distinct-draw counts above (one drawn icon spans several batches).
+    batches = defaultdict(list)
+    for s in log.get('spawns', []):
+        batches[s.get('time')].append(s)
+    tb = tt = nsh = 0
+    for t in sorted(batches):
+        cur = []
+        for s in batches[t]:
+            cur = s.get('current') or cur
+        effs = {ic.get('effect') for ic in cur}
+        tb += 'banish' in effs; tt += 'timeout' in effs
+        nsh += (not ({'banish', 'timeout'} & effs)) and ('unbanish' in effs)
+    n_batches = len(batches)
+
     cc = Counter(c.get('effect') for c in log.get('collected', []))
     frac_t = (gt / n) if n else np.nan
     p_balance = np.nan
@@ -143,6 +160,7 @@ def generated_punishments(log):
     p_runs, n_runs = _runs_test([1 if e == 'timeout' else 0 for e in order])
     return dict(
         gen_banish=gb, gen_timeout=gt, gen_n=n, gen_timeout_frac=frac_t, n_runs=n_runs,
+        trial_banish=int(tb), trial_timeout=int(tt), n_batches=int(n_batches), n_shadow=int(nsh),
         col_banish=int(cc.get('banish', 0)), col_timeout=int(cc.get('timeout', 0)),
         gen_sequence=''.join('B' if e == 'banish' else 'T' for e in order),
         p_balance=p_balance, p_runs=p_runs)
