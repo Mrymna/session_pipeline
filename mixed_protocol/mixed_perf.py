@@ -166,6 +166,30 @@ def generated_punishments(log):
         p_balance=p_balance, p_runs=p_runs)
 
 
+def punishment_lifetimes(log):
+    """For every punishment icon (unique ID), how many TRIALS (spawn batches) it stayed on the board
+    before it was collected/removed -- i.e. how long each hazard lingers before it is hit. Returns
+    {'banish': [n_trials, ...], 'timeout': [...]}. A larger value = the animal takes more trials to
+    reach that hazard (avoids it longer); a value of 1 = hit on the trial it appeared."""
+    from collections import defaultdict
+    batches = defaultdict(list)
+    for s in log.get('spawns', []):
+        batches[s.get('time')].append(s)
+    life, kind = defaultdict(set), {}
+    for t in sorted(batches):
+        cur = []
+        for s in batches[t]:
+            cur = s.get('current') or cur
+        for ic in cur:
+            e, i = ic.get('effect'), ic.get('ID')
+            if e in ('banish', 'timeout') and i is not None:
+                life[i].add(t); kind[i] = e
+    out = {'banish': [], 'timeout': []}
+    for i, ts in life.items():
+        out[kind[i]].append(len(ts))
+    return out
+
+
 # ── per-session summary (mirrors notebook sections 2 + 4c/4d) ───────────────────────────
 def _drops(seq, cap=4):
     tot, m = 0, 1
@@ -203,6 +227,9 @@ def session_summary(log, df):
         return float(v.median()) if len(v) else np.nan
 
     gen = generated_punishments(log)
+    lif = punishment_lifetimes(log)
+    _med = lambda v: float(np.median(v)) if v else np.nan
+    _mn = lambda v: float(np.mean(v)) if v else np.nan
 
     return dict(
         mouse=mouse_of(df), session=session_of(df), n_coll=len(df),
@@ -213,6 +240,8 @@ def session_summary(log, df):
         mult_mean=float(df.loc[df.valence == 'positive', 'multiplier'].dropna().mean()),
         mult_max=float(df.loc[df.valence == 'positive', 'multiplier'].dropna().max()) if npos else np.nan,
         pe_reward=pemed('single_reward'), pe_banish=pemed('banish'), pe_timeout=pemed('timeout'),
+        life_banish_med=_med(lif['banish']), life_timeout_med=_med(lif['timeout']),
+        life_banish_mean=_mn(lif['banish']), life_timeout_mean=_mn(lif['timeout']),
         **gen)
 
 
