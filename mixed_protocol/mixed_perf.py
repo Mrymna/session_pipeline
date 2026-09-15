@@ -97,6 +97,57 @@ def build_session_df(log, view_scale=None, session='', mouse=''):
     return pd.DataFrame(rows)
 
 
+# ── generated (spawned) vs collected punishments + randomness of the draw ────────────────
+def _runs_test(binseq):
+    """Two-sided Wald-Wolfowitz runs test on a 0/1 sequence -> p. A truly random order gives the
+    expected number of runs; too FEW runs = clustered (streaky), too MANY = over-alternating
+    (a balanced pseudo-random shuffle tends this way). nan if a class is empty or n<2."""
+    x = np.asarray(binseq, int)
+    n1 = int((x == 1).sum()); n2 = int((x == 0).sum()); n = n1 + n2
+    if n1 == 0 or n2 == 0 or n < 2:
+        return np.nan, (1 if n else 0)
+    runs = 1 + int((x[1:] != x[:-1]).sum())
+    mu = 1 + 2 * n1 * n2 / n
+    var = (2 * n1 * n2 * (2 * n1 * n2 - n)) / (n * n * (n - 1))
+    if var <= 0:
+        return np.nan, runs
+    from scipy.stats import norm
+    z = (runs - mu) / np.sqrt(var)
+    return float(2 * norm.sf(abs(z))), runs
+
+
+def generated_punishments(log):
+    """Punishment icons GENERATED (spawned) vs COLLECTED, and whether the banish/timeout draw looks
+    random. Each spawn batch puts one punishment on the board that is randomly a banishment OR a
+    timeout; this walks the spawn stream in time order, records each punishment icon the FIRST time
+    its ID appears (so a lingering icon is counted once), and asks two things of the generated order:
+      - p_balance: binomial test of timeout fraction vs 0.5  (is the draw biased to one type?)
+      - p_runs:    runs test of the B/T order                (random draw vs a balanced/streaky
+                   pseudo-random generator)
+    Returns generated counts, the timeout fraction, the collected counts, the B/T string, and both p's.
+    """
+    from collections import Counter
+    seen, order = {}, []
+    for s in sorted(log.get('spawns', []), key=lambda s: s.get('time', 0)):
+        for ic in (s.get('current') or []):
+            e, i = ic.get('effect'), ic.get('ID')
+            if e in ('banish', 'timeout') and i is not None and i not in seen:
+                seen[i] = e; order.append(e)
+    gb = order.count('banish'); gt = order.count('timeout'); n = gb + gt
+    cc = Counter(c.get('effect') for c in log.get('collected', []))
+    frac_t = (gt / n) if n else np.nan
+    p_balance = np.nan
+    if n:
+        from scipy.stats import binomtest
+        p_balance = float(binomtest(gt, n, 0.5, alternative='two-sided').pvalue)
+    p_runs, n_runs = _runs_test([1 if e == 'timeout' else 0 for e in order])
+    return dict(
+        gen_banish=gb, gen_timeout=gt, gen_n=n, gen_timeout_frac=frac_t, n_runs=n_runs,
+        col_banish=int(cc.get('banish', 0)), col_timeout=int(cc.get('timeout', 0)),
+        gen_sequence=''.join('B' if e == 'banish' else 'T' for e in order),
+        p_balance=p_balance, p_runs=p_runs)
+
+
 # ── per-session summary (mirrors notebook sections 2 + 4c/4d) ───────────────────────────
 def _drops(seq, cap=4):
     tot, m = 0, 1
@@ -133,6 +184,8 @@ def session_summary(log, df):
         v = df[df.effect == e]['path_efficiency'].dropna()
         return float(v.median()) if len(v) else np.nan
 
+    gen = generated_punishments(log)
+
     return dict(
         mouse=mouse_of(df), session=session_of(df), n_coll=len(df),
         n_reward=npos, n_timeout=ntime, n_banish=nban, n_escape=nesc,
@@ -141,7 +194,8 @@ def session_summary(log, df):
         win_stay=ws, p_reward_after_bad=ab, drops_earned=earned, bonus_captured=captured,
         mult_mean=float(df.loc[df.valence == 'positive', 'multiplier'].dropna().mean()),
         mult_max=float(df.loc[df.valence == 'positive', 'multiplier'].dropna().max()) if npos else np.nan,
-        pe_reward=pemed('single_reward'), pe_banish=pemed('banish'), pe_timeout=pemed('timeout'))
+        pe_reward=pemed('single_reward'), pe_banish=pemed('banish'), pe_timeout=pemed('timeout'),
+        **gen)
 
 
 def mouse_of(df):
