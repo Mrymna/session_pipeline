@@ -168,9 +168,9 @@ def generated_punishments(log):
 
 def punishment_lifetimes(log):
     """For every punishment icon (unique ID), how many TRIALS (spawn batches) it stayed on the board
-    before it was collected/removed -- i.e. how long each hazard lingers before it is hit. Returns
+    before it was collected/removed -- i.e. how long each negative icon lingers before it is hit. Returns
     {'banish': [n_trials, ...], 'timeout': [...]}. A larger value = the animal takes more trials to
-    reach that hazard (avoids it longer); a value of 1 = hit on the trial it appeared."""
+    reach that negative icon (avoids it longer); a value of 1 = hit on the trial it appeared."""
     from collections import defaultdict
     batches = defaultdict(list)
     for s in log.get('spawns', []):
